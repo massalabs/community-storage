@@ -1,0 +1,21 @@
+name: massa sc ci tests
+on: [push]
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: smartContract/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: smartContract
+
+      - name: Test
+        run: npm run test
+        working-directory: smartContract
