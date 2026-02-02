@@ -3,6 +3,12 @@
  *
  * Manages storage provider registration, challenges, and reward distribution
  * for the Massa distributed storage layer.
+ *
+ * - No staking required - rewards are distributed only to providers who pass
+ *   their data availability challenges.
+ * - Cloud storage admins: addresses allowed to upload data to massa-storage-client.
+ *   The storage client calls getIsStorageAdmin(uploader) before accepting POST /upload.
+ *   Admin can add/remove storage admins via addStorageAdmin / removeStorageAdmin.
  */
 import {
   Context,
@@ -32,6 +38,7 @@ const NODE_PREFIX = 'node_';
 const CHALLENGE_PREFIX = 'chal_';
 const PERIOD_PREFIX = 'period_';
 const CHALLENGER_PREFIX = 'challenger_';
+const STORAGE_ADMIN_PREFIX = 'storage_admin_';
 const ADMIN_KEY = 'admin';
 const CONFIG_KEY = 'config';
 const TOTAL_NODES_KEY = 'total_nodes';
@@ -55,6 +62,14 @@ function periodKey(period: u64): string {
 
 function challengerKey(address: string): string {
   return CHALLENGER_PREFIX + address;
+}
+
+function storageAdminKey(address: string): string {
+  return STORAGE_ADMIN_PREFIX + address;
+}
+
+function isStorageAdmin(address: string): bool {
+  return Storage.has(stringToBytes(storageAdminKey(address)));
 }
 
 function getConfig(): StorageConfig {
@@ -188,8 +203,6 @@ export function constructor(binaryArgs: StaticArray<u8>): void {
     config.minAllocatedGb = providedConfig.minAllocatedGb;
     config.maxAllocatedGb = providedConfig.maxAllocatedGb;
     config.challengeResponseTimeout = providedConfig.challengeResponseTimeout;
-    config.slashPercentage = providedConfig.slashPercentage;
-    config.minStake = providedConfig.minStake;
     config.rewardDistributionPeriod = providedConfig.rewardDistributionPeriod;
   }
   setConfig(config);
@@ -204,8 +217,7 @@ export function constructor(binaryArgs: StaticArray<u8>): void {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Register as a storage provider
- * Requires transferring minStake MAS with the call
+ * Register as a storage provider (no staking required)
  * @param binaryArgs - Serialized Args containing:
  *   - allocatedGb: u64 (storage allocation in GB)
  */
@@ -234,20 +246,8 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   const existingNode = getNode(caller);
   assert(existingNode === null, 'Node already registered');
 
-  // Validate stake
-  const transferredCoins = Context.transferredCoins();
-  assert(
-    transferredCoins >= config.minStake,
-    'Insufficient stake. Required: ' + config.minStake.toString() + ' nanoMAS',
-  );
-
-  // Create node
-  const node = new StorageNode(
-    caller,
-    allocatedGb,
-    Context.currentPeriod(),
-    transferredCoins,
-  );
+  // Create node (no staking required)
+  const node = new StorageNode(caller, allocatedGb, Context.currentPeriod());
   setNode(node);
 
   // Update total nodes count
@@ -315,7 +315,6 @@ export function updateStorageAllocation(binaryArgs: StaticArray<u8>): void {
 
 /**
  * Unregister from storage provision
- * Returns stake minus any pending slashes
  */
 export function unregisterStorageNode(_: StaticArray<u8>): void {
   const caller = Context.caller().toString();
@@ -323,9 +322,6 @@ export function unregisterStorageNode(_: StaticArray<u8>): void {
   const node = getNode(caller);
   assert(node !== null, 'Node not registered');
   assert(node!.active, 'Node already inactive');
-
-  // Calculate stake to return (minus slashes if any pending)
-  const stakeToReturn = node!.stakedAmount;
 
   // Mark node as inactive
   node!.active = false;
@@ -340,14 +336,7 @@ export function unregisterStorageNode(_: StaticArray<u8>): void {
   stats.activeNodes -= 1;
   setPeriodStats(stats);
 
-  // Return stake
-  if (stakeToReturn > 0) {
-    transferCoins(new Address(caller), stakeToReturn);
-  }
-
-  generateEvent(
-    'STORAGE_NODE_UNREGISTERED:' + caller + ',' + stakeToReturn.toString(),
-  );
+  generateEvent('STORAGE_NODE_UNREGISTERED:' + caller);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -435,7 +424,10 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
   assert(!challenge!.resolved, 'Challenge already resolved');
 
   const caller = Context.caller().toString();
-  assert(caller == challenge!.nodeAddress, 'Caller is not the challenged node');
+  assert(
+    caller == challenge!.nodeAddress,
+    'Caller is not the challenged node',
+  );
 
   // Check deadline
   const currentTime = Context.timestamp();
@@ -457,11 +449,7 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
       node!.passedChallenges += 1;
       generateEvent('CHALLENGE_PASSED:' + challengeId + ',' + caller);
     } else {
-      // Apply slash
-      const config = getConfig();
-      const slashAmount =
-        (node!.stakedAmount * config.slashPercentage) / 100;
-      node!.stakedAmount -= slashAmount;
+      // No slashing - just mark as failed
       generateEvent(
         'CHALLENGE_FAILED:' + challengeId + ',' + caller + ',invalid_proof',
       );
@@ -478,7 +466,7 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
 }
 
 /**
- * Mark expired challenges as failed
+ * Mark expired challenges as failed (no slashing)
  * @param binaryArgs - Serialized Args containing:
  *   - challengeIds: Array<string>
  */
@@ -489,7 +477,6 @@ export function resolveExpiredChallenges(binaryArgs: StaticArray<u8>): void {
     .expect('challengeIds argument is missing');
 
   const currentTime = Context.timestamp();
-  const config = getConfig();
 
   for (let i = 0; i < challengeIds.length; i++) {
     const challenge = getChallenge(challengeIds[i]);
@@ -501,15 +488,6 @@ export function resolveExpiredChallenges(binaryArgs: StaticArray<u8>): void {
       challenge!.resolved = true;
       challenge!.passed = false;
       setChallenge(challenge!);
-
-      // Apply slash to node
-      const node = getNode(challenge!.nodeAddress);
-      if (node !== null) {
-        const slashAmount =
-          (node!.stakedAmount * config.slashPercentage) / 100;
-        node!.stakedAmount -= slashAmount;
-        setNode(node!);
-      }
 
       generateEvent(
         'CHALLENGE_EXPIRED:' + challengeIds[i] + ',' + challenge!.nodeAddress,
@@ -523,10 +501,13 @@ export function resolveExpiredChallenges(binaryArgs: StaticArray<u8>): void {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Distribute rewards for a completed period
+ * Distribute rewards for a completed period.
+ * All providers must have been challenged for this period before distribution.
+ * Only nodes that passed their challenge receive rewards (no staking, no slashing).
+ *
  * @param binaryArgs - Serialized Args containing:
  *   - period: u64
- *   - nodeAddresses: Array<string> (nodes to distribute rewards to)
+ *   - nodeAddresses: Array<string> (all active provider addresses for this period)
  */
 export function distributeRewards(binaryArgs: StaticArray<u8>): void {
   assertNotPaused();
@@ -541,6 +522,18 @@ export function distributeRewards(binaryArgs: StaticArray<u8>): void {
   const stats = getPeriodStats(period);
   assert(!stats.rewardsDistributed, 'Rewards already distributed for period');
 
+  // Require all providers to have been challenged before distributing rewards
+  for (let i = 0; i < nodeAddresses.length; i++) {
+    const node = getNode(nodeAddresses[i]);
+    if (node === null || !node!.active) {
+      continue; // Skip inactive/unregistered
+    }
+    assert(
+      node!.lastChallengedPeriod == period,
+      'All providers must be challenged for this period before distributing rewards',
+    );
+  }
+
   const config = getConfig();
   let totalDistributed: u64 = 0;
   let nodeCount: u64 = 0;
@@ -551,15 +544,22 @@ export function distributeRewards(binaryArgs: StaticArray<u8>): void {
       continue;
     }
 
-    // Calculate reward: allocatedGb × rewardPerGbPerPeriod × (successRate / 100)
-    const successRate = node!.getSuccessRate();
-    const baseReward = node!.allocatedGb * config.rewardPerGbPerPeriod;
-    const adjustedReward = (baseReward * successRate) / 100;
+    // Only reward nodes that passed all their challenges for this period
+    if (node!.passedChallenges != node!.totalChallenges) {
+      generateEvent(
+        'REWARD_SKIPPED:' + nodeAddresses[i] + ',challenge_not_passed',
+      );
+      continue;
+    }
 
-    if (adjustedReward > 0) {
-      node!.pendingRewards += adjustedReward;
+    // Calculate reward: allocatedGb × rewardPerGbPerPeriod
+    const reward = node!.allocatedGb * config.rewardPerGbPerPeriod;
+
+    if (reward > 0) {
+      node!.pendingRewards += reward;
+      node!.lastRewardedPeriod = period;
       setNode(node!);
-      totalDistributed += adjustedReward;
+      totalDistributed += reward;
       nodeCount += 1;
     }
   }
@@ -695,6 +695,22 @@ export function calculatePendingRewards(
   return u64ToBytes(node!.pendingRewards);
 }
 
+/**
+ * Check if an address is a cloud storage admin (allowed to upload data to storage client).
+ * Used by massa-storage-client to verify uploader before accepting POST /upload.
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ * @returns Serialized bool as u64 (1 = true, 0 = false)
+ */
+export function getIsStorageAdmin(
+  binaryArgs: StaticArray<u8>,
+): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  return u64ToBytes(isStorageAdmin(address) ? 1 : 0);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // ADMIN FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════
@@ -752,6 +768,43 @@ export function removeChallenger(binaryArgs: StaticArray<u8>): void {
 }
 
 /**
+ * Add cloud storage admin (uploader) address (admin only).
+ * Storage admins are allowed to upload data to the storage client; the client
+ * verifies uploader via getIsStorageAdmin before accepting uploads.
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ */
+export function addStorageAdmin(binaryArgs: StaticArray<u8>): void {
+  assertAdmin();
+
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  Storage.set(stringToBytes(storageAdminKey(address)), stringToBytes('true'));
+
+  generateEvent('STORAGE_ADMIN_ADDED:' + address);
+}
+
+/**
+ * Remove cloud storage admin address (admin only)
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ */
+export function removeStorageAdmin(binaryArgs: StaticArray<u8>): void {
+  assertAdmin();
+
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  const key = stringToBytes(storageAdminKey(address));
+  if (Storage.has(key)) {
+    Storage.del(key);
+  }
+
+  generateEvent('STORAGE_ADMIN_REMOVED:' + address);
+}
+
+/**
  * Emergency pause/unpause contract (admin only)
  * @param binaryArgs - Serialized Args containing:
  *   - paused: bool
@@ -762,7 +815,10 @@ export function setPaused(binaryArgs: StaticArray<u8>): void {
   const args = new Args(binaryArgs);
   const paused = args.nextBool().expect('paused argument is missing');
 
-  Storage.set(stringToBytes(PAUSED_KEY), stringToBytes(paused ? 'true' : 'false'));
+  Storage.set(
+    stringToBytes(PAUSED_KEY),
+    stringToBytes(paused ? 'true' : 'false'),
+  );
 
   generateEvent('CONTRACT_PAUSED:' + paused.toString());
 }

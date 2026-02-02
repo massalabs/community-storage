@@ -13,10 +13,6 @@ export class StorageConfig implements Serializable {
   maxAllocatedGb: u64 = 1000;
   /** Challenge response timeout (ms) */
   challengeResponseTimeout: u64 = 60_000; // 1 minute
-  /** Penalty for failed challenge (percentage 0-100) */
-  slashPercentage: u64 = 10;
-  /** Required stake to register (nanoMAS) */
-  minStake: u64 = 100_000_000_000; // 100 MAS default
   /** Number of periods between reward distributions */
   rewardDistributionPeriod: u64 = 100;
 
@@ -28,8 +24,6 @@ export class StorageConfig implements Serializable {
       .add(this.minAllocatedGb)
       .add(this.maxAllocatedGb)
       .add(this.challengeResponseTimeout)
-      .add(this.slashPercentage)
-      .add(this.minStake)
       .add(this.rewardDistributionPeriod)
       .serialize();
   }
@@ -60,18 +54,6 @@ export class StorageConfig implements Serializable {
       return new Result(0, 'Failed to deserialize challengeResponseTimeout');
     }
     this.challengeResponseTimeout = challengeResponseTimeout.unwrap();
-
-    const slashPercentage = args.nextU64();
-    if (slashPercentage.isErr()) {
-      return new Result(0, 'Failed to deserialize slashPercentage');
-    }
-    this.slashPercentage = slashPercentage.unwrap();
-
-    const minStake = args.nextU64();
-    if (minStake.isErr()) {
-      return new Result(0, 'Failed to deserialize minStake');
-    }
-    this.minStake = minStake.unwrap();
 
     const rewardDistributionPeriod = args.nextU64();
     if (rewardDistributionPeriod.isErr()) {

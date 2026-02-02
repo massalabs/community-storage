@@ -17,10 +17,10 @@ export class StorageNode implements Serializable {
   passedChallenges: u64 = 0;
   /** Unclaimed rewards (nanoMAS) */
   pendingRewards: u64 = 0;
-  /** Last challenge period */
-  lastChallengedPeriod: u64 = 0;
-  /** Staked amount (nanoMAS) */
-  stakedAmount: u64 = 0;
+  /** Last challenge period (u64.MAX_VALUE = never challenged) */
+  lastChallengedPeriod: u64 = u64.MAX_VALUE;
+  /** Last period rewards were calculated for */
+  lastRewardedPeriod: u64 = 0;
   /** Is node currently active */
   active: bool = false;
 
@@ -28,23 +28,24 @@ export class StorageNode implements Serializable {
     address: string = '',
     allocatedGb: u64 = 0,
     registeredPeriod: u64 = 0,
-    stakedAmount: u64 = 0,
   ) {
     this.address = address;
     this.allocatedGb = allocatedGb;
     this.registeredPeriod = registeredPeriod;
-    this.stakedAmount = stakedAmount;
+    this.lastChallengedPeriod = u64.MAX_VALUE; // Never challenged
+    this.lastRewardedPeriod = registeredPeriod;
     this.active = true;
   }
 
   /**
-   * Calculate success rate as percentage (0-100)
+   * Check if node passed the challenge for the current period
    */
-  getSuccessRate(): u64 {
-    if (this.totalChallenges == 0) {
-      return 100; // No challenges yet, assume 100%
-    }
-    return (this.passedChallenges * 100) / this.totalChallenges;
+  hasPassedCurrentChallenge(currentPeriod: u64): bool {
+    return (
+      this.lastChallengedPeriod == currentPeriod &&
+      this.passedChallenges > 0 &&
+      this.passedChallenges == this.totalChallenges
+    );
   }
 
   serialize(): StaticArray<u8> {
@@ -56,7 +57,7 @@ export class StorageNode implements Serializable {
       .add(this.passedChallenges)
       .add(this.pendingRewards)
       .add(this.lastChallengedPeriod)
-      .add(this.stakedAmount)
+      .add(this.lastRewardedPeriod)
       .add(this.active)
       .serialize();
   }
@@ -106,11 +107,11 @@ export class StorageNode implements Serializable {
     }
     this.lastChallengedPeriod = lastChallengedPeriod.unwrap();
 
-    const stakedAmount = args.nextU64();
-    if (stakedAmount.isErr()) {
-      return new Result(0, 'Failed to deserialize stakedAmount');
+    const lastRewardedPeriod = args.nextU64();
+    if (lastRewardedPeriod.isErr()) {
+      return new Result(0, 'Failed to deserialize lastRewardedPeriod');
     }
-    this.stakedAmount = stakedAmount.unwrap();
+    this.lastRewardedPeriod = lastRewardedPeriod.unwrap();
 
     const active = args.nextBool();
     if (active.isErr()) {
