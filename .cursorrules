@@ -1,0 +1,6 @@
+# Conventions du projet
+
+## Bac à sable vs version réelle (front)
+
+- Si l'utilisateur préfixe sa demande par **sb:** ou **sb ** → appliquer les changements uniquement dans la partie bac à sable : `front/src/pages/Sandbox.jsx`, composant `<SandboxOnly>`, ou logique derrière `isSandboxMode()` (import depuis `front/src/contract/storageRegistryApi.js`). Ne pas modifier les pages/composants de la version réelle.
+- Sinon → appliquer les changements pour la version réelle (comportement par défaut).

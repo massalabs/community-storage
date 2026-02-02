@@ -40,7 +40,7 @@ const contract = await SmartContract.deploy(
   constructorArgs,
   {
     coins: Mas.fromString('1'), // Initial funding for storage costs
-    maxGas: 4_000_000_000n,
+    maxGas: 3_980_000_000n, // Sous la limite buildnet (~3.98G)
   },
 );
 
