@@ -4,6 +4,7 @@
  */
 import {
   Args,
+  ArrayTypes,
   JsonRpcPublicProvider,
   PublicAPI,
   PublicApiUrl,
@@ -12,7 +13,7 @@ import {
 
 const CONTRACT_ADDRESS =
   import.meta.env.VITE_STORAGE_REGISTRY_ADDRESS ||
-  'AS1V8vQxhL1q2c6fZJ8pGhU51eZiSLSNAwRojbmvVKWDaKbnsHk6'
+  'AS12Ed8CD6YRANxeVW16wq6hs4Jq3nvuX9PAVpoWAo5Gt7S1fE3XU'
 
 let provider = null
 let contract = null
@@ -37,7 +38,8 @@ export async function getCurrentPeriod() {
 
 /**
  * Lit la configuration du contrat (StorageConfig).
- * @returns {Promise<{ rewardPerGbPerPeriod, minAllocatedGb, maxAllocatedGb, challengeResponseTimeout, slashPercentage, minStake, rewardDistributionPeriod }>}
+ * Le contrat expose 5 champs : rewardPerGbPerPeriod, minAllocatedGb, maxAllocatedGb, challengeResponseTimeout, rewardDistributionPeriod.
+ * @returns {Promise<{ rewardPerGbPerPeriod, minAllocatedGb, maxAllocatedGb, challengeResponseTimeout, rewardDistributionPeriod }>}
  */
 export async function getConfig() {
   const sc = getContract()
@@ -49,8 +51,6 @@ export async function getConfig() {
     minAllocatedGb: args.nextU64(),
     maxAllocatedGb: args.nextU64(),
     challengeResponseTimeout: args.nextU64(),
-    slashPercentage: args.nextU64(),
-    minStake: args.nextU64(),
     rewardDistributionPeriod: args.nextU64(),
   }
 }
@@ -152,24 +152,77 @@ export async function getNodeAddressAt(index) {
 }
 
 /**
- * Liste des providers avec place dispo (version réelle : lit la liste on-chain).
- * Chaque item : { address, allocatedGb, usedGb?, availableGb }. usedGb non exposé par le contrat → availableGb = allocatedGb.
- * @returns {Promise<Array<{ address, allocatedGb, usedGb?, availableGb }>>}
+ * Récupère la liste des adresses enregistrées via getRegisteredAddressesView (un seul appel RPC).
+ * @returns {Promise<string[]>} Tableau d'adresses, ou [] si la vue n'existe pas / échec
+ */
+export async function getRegisteredAddresses() {
+  try {
+    const sc = getContract()
+    const res = await sc.read('getRegisteredAddressesView', new Args())
+    if (res.info?.error || !res.value || res.value.length === 0) return []
+    const args = new Args(res.value)
+    const arr = args.nextArray(ArrayTypes.STRING)
+    return Array.isArray(arr) ? arr : []
+  } catch (_) {
+    return []
+  }
+}
+
+/**
+ * Récupère les métadonnées d'un provider (endpoint HTTP + adresses P2P) depuis le contrat.
+ * Permet de savoir où envoyer les fichiers pour hébergement (massa-storage-server).
+ * @param {string} address - Adresse du provider
+ * @returns {Promise<{ endpoint: string, p2pAddrs: string[] }>}
+ */
+export async function getProviderMetadata(address) {
+  try {
+    const sc = getContract()
+    const args = new Args().addString(address)
+    const res = await sc.read('getProviderMetadataView', args)
+    if (res.info?.error || !res.value || res.value.length === 0) {
+      return { endpoint: '', p2pAddrs: [] }
+    }
+    const out = new Args(res.value)
+    const endpoint = out.nextString() || ''
+    const p2pAddrs = out.nextArray(ArrayTypes.STRING) || []
+    return { endpoint, p2pAddrs: Array.isArray(p2pAddrs) ? p2pAddrs : [] }
+  } catch (_) {
+    return { endpoint: '', p2pAddrs: [] }
+  }
+}
+
+/**
+ * Liste des providers avec place dispo et métadonnées (version réelle : lit la liste on-chain).
+ * Chaque item : { address, allocatedGb, usedGb?, availableGb, endpoint?, p2pAddrs? }.
+ * endpoint = URL HTTP du massa-storage-server pour héberger les fichiers ; p2pAddrs = multiaddrs libp2p.
+ * @returns {Promise<Array<{ address, allocatedGb, usedGb?, availableGb, endpoint?, p2pAddrs? }>>}
  */
 export async function getStorageProviders() {
-  const total = await getTotalNodes()
-  const n = Number(total)
-  if (n === 0) return []
+  let addresses = await getRegisteredAddresses()
+  if (addresses.length === 0) {
+    const total = await getTotalNodes()
+    const n = Number(total)
+    for (let i = 0; i < n; i++) {
+      const addr = await getNodeAddressAt(i)
+      if (addr) addresses.push(addr)
+    }
+  }
   const list = []
-  for (let i = 0; i < n; i++) {
-    const address = await getNodeAddressAt(i)
-    if (!address) continue
+  for (const address of addresses) {
     const info = await getNodeInfo(address)
     if (!info || !info.active) continue
     const allocatedGb = info.allocatedGb
     const usedGb = info.usedGb != null ? info.usedGb : 0n
     const availableGb = allocatedGb - usedGb
-    list.push({ address, allocatedGb, usedGb, availableGb: availableGb > 0n ? availableGb : allocatedGb })
+    const metadata = await getProviderMetadata(address)
+    list.push({
+      address,
+      allocatedGb,
+      usedGb,
+      availableGb: availableGb > 0n ? availableGb : allocatedGb,
+      endpoint: metadata.endpoint || undefined,
+      p2pAddrs: metadata.p2pAddrs?.length ? metadata.p2pAddrs : undefined,
+    })
   }
   return list
 }

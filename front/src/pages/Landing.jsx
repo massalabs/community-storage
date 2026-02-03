@@ -5,6 +5,7 @@ import {
   getCurrentPeriod,
   getPeriodStats,
   getStorageProviders,
+  isSandboxMode,
 } from '../contract/storageRegistryApi'
 
 function toNum(v) {
@@ -111,7 +112,15 @@ export function Landing() {
         </div>
 
         {error && !config && (
-          <p className="mt-6 text-sm text-red-400/90">{error}</p>
+          <div className="mt-6 glass-panel border border-line border-l-red-500/60 p-4">
+            <p className="font-mono text-sm font-medium text-red-400/90">Erreur de chargement</p>
+            <p className="mt-1 text-sm text-zinc-400">{error}</p>
+            {!isSandboxMode() && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Mode réel — Vérifiez que le contrat est déployé sur le buildnet et que VITE_STORAGE_REGISTRY_ADDRESS est correct.
+              </p>
+            )}
+          </div>
         )}
 
         {/* CTA */}

@@ -53,6 +53,14 @@ export function removeStoredFile(id) {
   return list
 }
 
+/** Supprime plusieurs fichiers par id. */
+export function removeStoredFiles(ids) {
+  const idSet = new Set(ids)
+  const list = getStoredFiles().filter((e) => !idSet.has(e.id))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  return list
+}
+
 /** Fichiers de démo pour le bac à sable (quand la liste réelle est vide). */
 const MOCK_PROVIDER_ADDRESSES = [
   'AU12Provider1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

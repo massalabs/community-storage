@@ -52,9 +52,14 @@ export async function getContractBalance(final = true) {
   return api().getContractBalance(final)
 }
 
-/** Liste des providers de stockage avec place dispo (allocatedGb, usedGb?, availableGb). */
+/** Liste des providers de stockage avec place dispo et métadonnées (endpoint, p2pAddrs). */
 export async function getStorageProviders() {
   return api().getStorageProviders()
+}
+
+/** Métadonnées d'un provider (endpoint HTTP + P2P) pour hébergement. */
+export async function getProviderMetadata(address) {
+  return api().getProviderMetadata(address)
 }
 
 /** True si l'app tourne en mode bac à sable (données fictives). */

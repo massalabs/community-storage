@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getStoredFiles, extendStoredFiles, getSandboxMockFiles } from '../lib/myFilesStorage'
+import { getStoredFiles, extendStoredFiles, removeStoredFiles, getSandboxMockFiles } from '../lib/myFilesStorage'
 import { isSandboxMode } from '../contract/storageRegistryApi'
 
 function formatBytes(bytes) {
@@ -37,9 +37,19 @@ export function MyFiles() {
   const [extending, setExtending] = useState(false)
   const [extendMonths, setExtendMonths] = useState(1)
 
+  const HIDDEN_MOCKS_KEY = 'massa-storage-hidden-mocks'
+
   const load = useCallback(() => {
     const stored = getStoredFiles()
-    setList(sandbox && stored.length === 0 ? getSandboxMockFiles() : stored)
+    let list = sandbox && stored.length === 0 ? getSandboxMockFiles() : stored
+    if (sandbox && stored.length === 0) {
+      try {
+        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
+        const hiddenIds = hidden ? JSON.parse(hidden) : []
+        list = list.filter((e) => !hiddenIds.includes(e.id))
+      } catch (_) {}
+    }
+    setList(list)
   }, [sandbox])
 
   useEffect(() => {
@@ -67,6 +77,54 @@ export function MyFiles() {
     setExtending(false)
     setSelectedIds(new Set())
     load()
+  }
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return
+    const ids = [...selectedIds]
+    if (sandbox && getStoredFiles().length === 0) {
+      try {
+        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
+        const hiddenIds = hidden ? JSON.parse(hidden) : []
+        ids.forEach((id) => hiddenIds.push(id))
+        sessionStorage.setItem(HIDDEN_MOCKS_KEY, JSON.stringify(hiddenIds))
+      } catch (_) {}
+    } else {
+      removeStoredFiles(ids)
+    }
+    setSelectedIds(new Set())
+    load()
+  }
+
+  const handleDeleteOne = (id) => {
+    if (sandbox && getStoredFiles().length === 0) {
+      try {
+        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
+        const hiddenIds = hidden ? JSON.parse(hidden) : []
+        if (!hiddenIds.includes(id)) hiddenIds.push(id)
+        sessionStorage.setItem(HIDDEN_MOCKS_KEY, JSON.stringify(hiddenIds))
+      } catch (_) {}
+    } else {
+      removeStoredFiles([id])
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    load()
+  }
+
+  /** Téléchargement : fichier placeholder (contenu réel = récupération auprès des providers). */
+  const handleDownload = (entry) => {
+    const content = `Fichier hébergé sur Massa Storage — ${entry.name}\nTaille: ${formatBytes(entry.size)}, ${entry.replicationCount} réplication(s).\nContenu réel récupérable auprès des providers de stockage.`
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = entry.name || 'fichier'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const isExpired = (expiresAt) => new Date(expiresAt) < new Date()
@@ -117,6 +175,13 @@ export function MyFiles() {
               >
                 {extending ? 'En cours…' : 'Prolonger la sélection'}
               </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                className="rounded-lg border border-red-500/60 px-4 py-1.5 text-sm font-medium text-red-400 hover:bg-red-500/20"
+              >
+                Supprimer la sélection
+              </button>
               <button type="button" onClick={() => setSelectedIds(new Set())} className="text-sm text-zinc-500 hover:text-slate-200">
                 Annuler
               </button>
@@ -141,6 +206,7 @@ export function MyFiles() {
                   <th className="px-4 py-3 font-medium">Durée</th>
                   <th className="px-4 py-3 font-medium">Hébergé chez</th>
                   <th className="px-4 py-3 font-medium">Expire le</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -166,6 +232,25 @@ export function MyFiles() {
                     <td className={`px-4 py-3 ${isExpired(entry.expiresAt) ? 'text-red-400' : 'text-zinc-500'}`}>
                       {formatDate(entry.expiresAt)}
                       {isExpired(entry.expiresAt) && ' (expiré)'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(entry)}
+                          className="font-mono text-xs uppercase tracking-wide text-accent hover:underline"
+                        >
+                          Télécharger
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOne(entry.id)}
+                          className="font-mono text-xs uppercase tracking-wide text-red-400/90 hover:underline"
+                          title="Supprimer de ma liste"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

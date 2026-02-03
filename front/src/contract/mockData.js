@@ -75,15 +75,22 @@ export async function getContractBalance(_final = true) {
   return BigInt(50_000 * 1e9)  // 50 000 MAS
 }
 
-/** Liste des providers avec place dispo (pour Store Files). Chaque item : { address, allocatedGb, usedGb, availableGb } */
+/** Liste des providers avec place dispo et métadonnées (pour Store Files). */
 const MOCK_PROVIDERS = [
-  { address: 'AU12Provider1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', allocatedGb: 100n, usedGb: 25n, availableGb: 75n },
-  { address: 'AU12Provider2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', allocatedGb: 50n, usedGb: 10n, availableGb: 40n },
-  { address: 'AU12Provider3cccccccccccccccccccccccccccccccccccccccc', allocatedGb: 200n, usedGb: 120n, availableGb: 80n },
-  { address: 'AU12Provider4dddddddddddddddddddddddddddddddddddddddd', allocatedGb: 20n, usedGb: 5n, availableGb: 15n },
-  { address: 'AU12Provider5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', allocatedGb: 500n, usedGb: 200n, availableGb: 300n },
+  { address: 'AU12Provider1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', allocatedGb: 100n, usedGb: 25n, availableGb: 75n, endpoint: 'https://storage1.demo.massa.net', p2pAddrs: ['/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWProvider1'] },
+  { address: 'AU12Provider2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', allocatedGb: 50n, usedGb: 10n, availableGb: 40n, endpoint: 'https://storage2.demo.massa.net', p2pAddrs: [] },
+  { address: 'AU12Provider3cccccccccccccccccccccccccccccccccccccccc', allocatedGb: 200n, usedGb: 120n, availableGb: 80n, endpoint: '', p2pAddrs: ['/ip4/10.0.0.3/tcp/4001/p2p/12D3KooWProvider3'] },
+  { address: 'AU12Provider4dddddddddddddddddddddddddddddddddddddddd', allocatedGb: 20n, usedGb: 5n, availableGb: 15n, endpoint: 'https://storage4.demo.massa.net', p2pAddrs: [] },
+  { address: 'AU12Provider5eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', allocatedGb: 500n, usedGb: 200n, availableGb: 300n, endpoint: '', p2pAddrs: [] },
 ]
 
 export async function getStorageProviders() {
   return MOCK_PROVIDERS.map((p) => ({ ...p }))
+}
+
+/** Métadonnées mock (cohérent avec les providers ci-dessus). */
+export async function getProviderMetadata(address) {
+  const p = MOCK_PROVIDERS.find((x) => x.address === address)
+  if (!p) return { endpoint: '', p2pAddrs: [] }
+  return { endpoint: p.endpoint || '', p2pAddrs: p.p2pAddrs || [] }
 }

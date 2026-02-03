@@ -75,6 +75,11 @@ export function Layout({ children }) {
   return (
     <div className="min-h-screen grid-bg bg-bg text-zinc-100">
       {sandbox && <SandboxBanner />}
+      {showModeToggle && !sandbox && (
+        <div className="border-b border-line border-l-2 border-l-emerald-500/80 bg-emerald-500/10 px-6 py-2 text-center font-mono text-xs uppercase tracking-wide text-emerald-400/90">
+          Mode réel — Buildnet
+        </div>
+      )}
       <header className="glass-panel border-b border-line">
         <div className="mx-auto flex max-w-content items-center justify-between gap-grid px-6 py-4">
           <Link

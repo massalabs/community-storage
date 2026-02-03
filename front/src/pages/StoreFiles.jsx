@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getConfig, getStorageProviders } from '../contract/storageRegistryApi'
+import { getConfig, getStorageProviders, isSandboxMode } from '../contract/storageRegistryApi'
 import { addStoredFiles } from '../lib/myFilesStorage'
+import { uploadFileToProviders } from '../lib/uploadToProvider'
 
 function toNum(v) {
   return typeof v === 'bigint' ? Number(v) : v
@@ -38,6 +39,8 @@ export function StoreFiles() {
   const [isDragging, setIsDragging] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [storing, setStoring] = useState(false)
+  const [storeError, setStoreError] = useState(null)
+  const [providersError, setProvidersError] = useState(null)
 
   // Quand on baisse le nombre de réplications, on garde seulement les N premiers sélectionnés
   const setReplicationCountAndTrim = useCallback((n) => {
@@ -56,9 +59,15 @@ export function StoreFiles() {
   useEffect(() => {
     let cancelled = false
     setLoadingProviders(true)
+    setProvidersError(null)
     getStorageProviders()
       .then((list) => { if (!cancelled) setProviders(list || []) })
-      .catch(() => { if (!cancelled) setProviders([]) })
+      .catch((e) => {
+        if (!cancelled) {
+          setProviders([])
+          setProvidersError(e?.message || 'Impossible de charger les providers')
+        }
+      })
       .finally(() => { if (!cancelled) setLoadingProviders(false) })
     return () => { cancelled = true }
   }, [])
@@ -105,12 +114,17 @@ export function StoreFiles() {
     setSelectedProviders([])
   }, [])
 
-  const handleConfirmStore = useCallback(() => {
+  const handleConfirmStore = useCallback(async () => {
     if (!files.length || selectedProviders.length !== replicationCount) return
     setStoring(true)
+    setStoreError(null)
     const now = new Date()
     const expires = new Date(now)
     expires.setMonth(expires.getMonth() + durationMonths)
+    const providerEndpoints = selectedProviders
+      .map((addr) => providers.find((p) => p.address === addr)?.endpoint)
+      .filter(Boolean)
+
     const entries = files.map((f) => ({
       id: crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: f.name,
@@ -118,15 +132,45 @@ export function StoreFiles() {
       replicationCount,
       durationMonths,
       providers: [...selectedProviders],
+      providerEndpoints: providerEndpoints.length ? providerEndpoints : undefined,
       uploadedAt: now.toISOString(),
       expiresAt: expires.toISOString(),
     }))
+
+    if (!isSandboxMode() && providerEndpoints.length > 0) {
+      const uploadResults = []
+      for (let i = 0; i < files.length; i++) {
+        const { succeeded, failed } = await uploadFileToProviders(
+          providerEndpoints,
+          files[i],
+          entries[i].id
+        )
+        uploadResults.push({ succeeded, failed })
+        entries[i].uploadedTo = succeeded.length ? succeeded : undefined
+      }
+      const anyFailed = uploadResults.some((r) => r.failed.length > 0)
+      const allFailed = uploadResults.every((r) => r.succeeded.length === 0)
+      if (allFailed) {
+        setStoreError(
+          'Aucun provider n\'a accepté le fichier (vérifiez les URLs, CORS et que le serveur est joignable).'
+        )
+        setStoring(false)
+        return
+      }
+      if (anyFailed) {
+        setStoreError(
+          'Certains providers n\'ont pas répondu ; les fichiers ont été envoyés où c\'était possible.'
+        )
+      }
+    }
+
     addStoredFiles(entries)
     setStoring(false)
     setConfirmOpen(false)
+    setStoreError(null)
     clearAllFiles()
     navigate('/my-files')
-  }, [files, selectedProviders, replicationCount, durationMonths, clearAllFiles, navigate])
+  }, [files, selectedProviders, replicationCount, durationMonths, providers, clearAllFiles, navigate])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 
@@ -303,11 +347,21 @@ export function StoreFiles() {
                 <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
                 Chargement des providers…
               </div>
+            ) : providersError ? (
+              <div className="glass-panel geo-frame border border-line border-l-red-500/60 p-6 text-red-400/90">
+                <p className="font-medium">Erreur chargement providers</p>
+                <p className="mt-1 text-sm text-zinc-400">{providersError}</p>
+                <p className="mt-2 text-xs text-zinc-500">
+                  Vérifiez que le contrat est déployé sur le buildnet et que VITE_STORAGE_REGISTRY_ADDRESS pointe vers la bonne adresse.
+                </p>
+              </div>
             ) : providers.length === 0 ? (
               <div className="glass-panel geo-frame border border-line p-6 text-zinc-500">
-                <p>Aucun provider listé pour le moment.</p>
+                <p>{isSandboxMode() ? 'Aucun provider listé pour le moment.' : 'Aucun provider enregistré sur le contrat (buildnet).'}</p>
                 <p className="mt-1 text-sm text-zinc-500">
-                  En mode bac à sable, une liste fictive est affichée. En mode réel, connectez un indexeur pour lister les nœuds.
+                  {isSandboxMode()
+                    ? 'En mode bac à sable, une liste fictive est affichée.'
+                    : 'Enregistrez des nœuds de stockage via le contrat pour qu\'ils apparaissent ici.'}
                 </p>
               </div>
             ) : (
@@ -340,6 +394,16 @@ export function StoreFiles() {
                         <span>Alloué {toNum(p.allocatedGb)} GB</span>
                         <span className="text-accent font-medium">Dispo {toNum(p.availableGb)} GB</span>
                       </div>
+                      {(p.endpoint || (p.p2pAddrs && p.p2pAddrs.length > 0)) && (
+                        <div className="mt-2 border-t border-line/60 pt-2 text-xs text-zinc-500">
+                          {p.endpoint && (
+                            <p className="truncate font-mono" title={p.endpoint}>HTTP: {p.endpoint}</p>
+                          )}
+                          {p.p2pAddrs && p.p2pAddrs.length > 0 && (
+                            <p className="mt-0.5 truncate font-mono" title={p.p2pAddrs[0]}>P2P: {p.p2pAddrs[0]}</p>
+                          )}
+                        </div>
+                      )}
                     </button>
                   )
                 })}
@@ -354,6 +418,11 @@ export function StoreFiles() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
           <div className="glass-panel geo-frame w-full max-w-md border border-line p-6" onClick={(e) => e.stopPropagation()}>
             <h2 id="confirm-title" className="text-lg font-semibold text-white">Confirmer le stockage</h2>
+            {storeError && (
+              <div className="mt-4 border border-red-500/60 bg-red-500/10 p-3 text-sm text-red-400/90">
+                {storeError}
+              </div>
+            )}
             <div className="mt-4 space-y-3 text-sm">
               <p className="text-zinc-300"><strong>Fichiers :</strong> {files.length}</p>
               <ul className="max-h-24 overflow-y-auto border border-line bg-white/5 p-2 text-zinc-500">
