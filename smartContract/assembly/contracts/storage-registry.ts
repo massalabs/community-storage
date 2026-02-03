@@ -453,10 +453,7 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
   assert(!challenge!.resolved, 'Challenge already resolved');
 
   const caller = Context.caller().toString();
-  assert(
-    caller == challenge!.nodeAddress,
-    'Caller is not the challenged node',
-  );
+  assert(caller == challenge!.nodeAddress, 'Caller is not the challenged node');
 
   // Check deadline
   const currentTime = Context.timestamp();
@@ -722,7 +719,9 @@ export function getProviderMetadataView(
  * @param _ - unused
  * @returns Serialized Array<string> of Massa addresses
  */
-export function getRegisteredAddressesView(_: StaticArray<u8>): StaticArray<u8> {
+export function getRegisteredAddressesView(
+  _: StaticArray<u8>,
+): StaticArray<u8> {
   const addresses = getNodeIndex();
   return new Args().add<Array<string>>(addresses).serialize();
 }
@@ -733,9 +732,7 @@ export function getRegisteredAddressesView(_: StaticArray<u8>): StaticArray<u8> 
  *   - challengeId: string
  * @returns Serialized Challenge
  */
-export function getChallengeInfo(
-  binaryArgs: StaticArray<u8>,
-): StaticArray<u8> {
+export function getChallengeInfo(binaryArgs: StaticArray<u8>): StaticArray<u8> {
   const args = new Args(binaryArgs);
   const challengeId = args
     .nextString()
@@ -950,9 +947,6 @@ export function fundContract(_: StaticArray<u8>): void {
   assert(amount > 0, 'No coins transferred');
 
   generateEvent(
-    'CONTRACT_FUNDED:' +
-      Context.caller().toString() +
-      ',' +
-      amount.toString(),
+    'CONTRACT_FUNDED:' + Context.caller().toString() + ',' + amount.toString(),
   );
 }

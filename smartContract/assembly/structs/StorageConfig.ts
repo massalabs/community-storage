@@ -16,7 +16,9 @@ export class StorageConfig implements Serializable {
   /** Number of periods between reward distributions */
   rewardDistributionPeriod: u64 = 100;
 
-  constructor() {}
+  constructor() {
+    // Default constructor for Serializable; fields use class defaults above.
+  }
 
   serialize(): StaticArray<u8> {
     return new Args()

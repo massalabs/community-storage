@@ -9,7 +9,6 @@ import { Args, bytesToU64 } from '@massalabs/as-types';
 import {
   constructor,
   registerStorageNode,
-  getTotalNodesCount,
   getConfigView,
   getNodeInfo,
   getProviderMetadataView,
@@ -291,9 +290,7 @@ describe('Storage Registry - Challenge System', () => {
     switchUser(NODE_ADDRESS);
     const proofArgs = new Args()
       .add('challenge_001')
-      .add<StaticArray<u8>>(
-        StaticArray.fromArray<u8>([1, 2, 3, 4]),
-      ) // Non-empty proof
+      .add<StaticArray<u8>>(StaticArray.fromArray<u8>([1, 2, 3, 4])) // Non-empty proof
       .serialize();
     submitProof(proofArgs);
 
@@ -307,7 +304,8 @@ describe('Storage Registry - Challenge System', () => {
   });
 
   throws('should fail when non-challenger issues challenge', () => {
-    const OTHER_ADDRESS = 'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
+    const OTHER_ADDRESS =
+      'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
     switchUser(OTHER_ADDRESS);
     const challengeArgs = new Args()
       .add('challenge_002')
@@ -375,8 +373,7 @@ describe('Storage Registry - Reward Distribution', () => {
     'should fail to distribute rewards until all providers are challenged',
     () => {
       // Register a second node but do NOT challenge it
-      const NODE2 =
-        'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
+      const NODE2 = 'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
       switchUser(NODE2);
       registerStorageNode(new Args().add<u64>(5).serialize());
 

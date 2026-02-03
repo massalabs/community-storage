@@ -34,23 +34,37 @@ const contract = new SmartContract(provider, CONTRACT_ADDRESS);
 let addresses: string[] = [];
 if (PROVIDER_ADDRESSES_ENV.length > 0) {
   addresses = PROVIDER_ADDRESSES_ENV;
-  console.log('Using PROVIDER_ADDRESSES from env:', addresses.length, 'address(es)\n');
+  console.log(
+    'Using PROVIDER_ADDRESSES from env:',
+    addresses.length,
+    'address(es)\n',
+  );
 } else {
   try {
-    const viewResult = await contract.read('getRegisteredAddressesView', new Args());
+    const viewResult = await contract.read(
+      'getRegisteredAddressesView',
+      new Args(),
+    );
     const raw = viewResult.value;
     if (raw && raw.length > 0) {
       const args = new Args(raw);
       addresses = args.nextArray<string>(ArrayTypes.STRING);
     }
   } catch (e) {
-    console.warn('getRegisteredAddressesView not available or failed:', (e as Error).message);
-    console.log('Set PROVIDER_ADDRESSES=addr1,addr2,... to list specific providers.\n');
+    console.warn(
+      'getRegisteredAddressesView not available or failed:',
+      (e as Error).message,
+    );
+    console.log(
+      'Set PROVIDER_ADDRESSES=addr1,addr2,... to list specific providers.\n',
+    );
     process.exit(0);
   }
   if (addresses.length === 0) {
     console.log('No registered providers (or contract has no index yet).');
-    console.log('Set PROVIDER_ADDRESSES=addr1,addr2,... to list specific providers.\n');
+    console.log(
+      'Set PROVIDER_ADDRESSES=addr1,addr2,... to list specific providers.\n',
+    );
     process.exit(0);
   }
   console.log('Registry contract:', CONTRACT_ADDRESS);
@@ -101,19 +115,50 @@ for (let i = 0; i < addresses.length; i++) {
   const addr = addresses[i];
   console.log('--- Provider', i + 1, ':', addr, '---');
   try {
-    const nodeRes = await contract.read('getNodeInfo', new Args().addString(addr));
-    const node = deserializeNodeInfo(nodeRes.value!);
-    console.log('  Node: allocatedGb=', node.allocatedGb.toString(), 'active=', node.active);
-    console.log('  Challenges: total=', node.totalChallenges.toString(), 'passed=', node.passedChallenges.toString());
-    console.log('  Pending rewards:', node.pendingRewards.toString(), 'nanoMAS');
+    const nodeRes = await contract.read(
+      'getNodeInfo',
+      new Args().addString(addr),
+    );
+    if (nodeRes.value) {
+      const node = deserializeNodeInfo(nodeRes.value);
+      console.log(
+        '  Node: allocatedGb=',
+        node.allocatedGb.toString(),
+        'active=',
+        node.active,
+      );
+      console.log(
+        '  Challenges: total=',
+        node.totalChallenges.toString(),
+        'passed=',
+        node.passedChallenges.toString(),
+      );
+      console.log(
+        '  Pending rewards:',
+        node.pendingRewards.toString(),
+        'nanoMAS',
+      );
+    } else {
+      console.log('  Node: (no data)');
+    }
   } catch (e) {
     console.log('  Node: (not found or error)', (e as Error).message);
   }
   try {
-    const metaRes = await contract.read('getProviderMetadataView', new Args().addString(addr));
-    const meta = deserializeProviderMeta(metaRes.value!);
-    console.log('  Endpoint:', meta.endpoint || '(none)');
-    console.log('  P2P addrs:', meta.p2pAddrs.length ? meta.p2pAddrs.join(', ') : '(none)');
+    const metaRes = await contract.read(
+      'getProviderMetadataView',
+      new Args().addString(addr),
+    );
+    if (metaRes.value) {
+      const meta = deserializeProviderMeta(metaRes.value);
+      console.log('  Endpoint:', meta.endpoint || '(none)');
+      console.log(
+        '  P2P addrs:',
+        meta.p2pAddrs.length ? meta.p2pAddrs.join(', ') : '(none)',
+      );
+    } else {
+      console.log('  Metadata: (no data)');
+    }
   } catch (e) {
     console.log('  Metadata: (not set or error)', (e as Error).message);
   }
