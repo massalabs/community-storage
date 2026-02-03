@@ -12,6 +12,7 @@ import {
   getTotalNodesCount,
   getConfigView,
   getNodeInfo,
+  getProviderMetadataView,
   getIsStorageAdmin,
   addChallenger,
   addStorageAdmin,
@@ -21,6 +22,7 @@ import {
   distributeRewards,
   fundContract,
   unregisterStorageNode,
+  updateProviderMetadata,
 } from '../contracts/storage-registry';
 import { StorageNode } from '../structs/StorageNode';
 import { StorageConfig } from '../structs/StorageConfig';
@@ -57,6 +59,64 @@ describe('Storage Registry - Constructor', () => {
     expect(config.maxAllocatedGb).toBe(1000);
     expect(config.rewardPerGbPerPeriod).toBe(1_000_000);
   });
+});
+
+describe('Storage Registry - Provider Metadata', () => {
+  beforeEach(() => {
+    deployContract();
+
+    // Register a node
+    switchUser(NODE_ADDRESS);
+    registerStorageNode(new Args().add<u64>(10).serialize());
+  });
+
+  it('should allow a registered node to update and read its metadata', () => {
+    switchUser(NODE_ADDRESS);
+
+    const endpoint = 'https://storage1.massa.net';
+    const p2pAddrs = ['/ip4/1.2.3.4/tcp/4001/p2p/peer1'];
+
+    const updateArgs = new Args().add(endpoint).add<Array<string>>(p2pAddrs);
+    updateProviderMetadata(updateArgs.serialize());
+
+    const viewArgs = new Args().add(NODE_ADDRESS).serialize();
+    const metaBytes = getProviderMetadataView(viewArgs);
+    const metaArgs = new Args(metaBytes);
+
+    const decodedEndpoint = metaArgs.nextString().expect('endpoint');
+    const decodedAddrs = metaArgs.nextStringArray().expect('p2p addrs');
+
+    expect(decodedEndpoint).toBe(endpoint);
+    expect(decodedAddrs.length).toBe(1);
+    expect(decodedAddrs[0]).toBe(p2pAddrs[0]);
+  });
+
+  it('getProviderMetadataView returns empty metadata when not set', () => {
+    // Fresh deploy + registration, but no metadata set yet.
+    const viewArgs = new Args().add(NODE_ADDRESS).serialize();
+    const metaBytes = getProviderMetadataView(viewArgs);
+    const metaArgs = new Args(metaBytes);
+
+    const decodedEndpoint = metaArgs.nextString().expect('endpoint');
+    const decodedAddrs = metaArgs.nextStringArray().expect('p2p addrs');
+
+    expect(decodedEndpoint).toBe('');
+    expect(decodedAddrs.length).toBe(0);
+  });
+
+  throws(
+    'should fail to update metadata when caller is not a registered node',
+    () => {
+      const OTHER_ADDRESS =
+        'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3zz';
+      switchUser(OTHER_ADDRESS);
+
+      const updateArgs = new Args()
+        .add('https://storage2.massa.net')
+        .add<Array<string>>([]);
+      updateProviderMetadata(updateArgs.serialize());
+    },
+  );
 });
 
 describe('Storage Registry - Node Registration (No Staking)', () => {

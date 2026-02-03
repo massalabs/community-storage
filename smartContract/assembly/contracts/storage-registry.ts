@@ -35,6 +35,7 @@ import { StorageConfig } from '../structs/StorageConfig';
 // ═══════════════════════════════════════════════════════════════════
 
 const NODE_PREFIX = 'node_';
+const PROVIDER_META_PREFIX = 'provider_meta_';
 const CHALLENGE_PREFIX = 'chal_';
 const PERIOD_PREFIX = 'period_';
 const CHALLENGER_PREFIX = 'challenger_';
@@ -50,6 +51,10 @@ const PAUSED_KEY = 'paused';
 
 function nodeKey(address: string): string {
   return NODE_PREFIX + address;
+}
+
+function providerMetadataKey(address: string): string {
+  return PROVIDER_META_PREFIX + address;
 }
 
 function challengeKey(id: string): string {
@@ -604,6 +609,42 @@ export function claimRewards(_: StaticArray<u8>): void {
   generateEvent('REWARDS_CLAIMED:' + caller + ',' + amount.toString());
 }
 
+/**
+ * Update storage provider metadata (called by the storage provider itself).
+ *
+ * This lets a node advertise:
+ * - Its public HTTP endpoint (base URL for the massa-storage-server)
+ * - Its P2P multiaddrs (libp2p addresses used by other storage clients/nodes)
+ *
+ * @param binaryArgs - Serialized Args containing:
+ *   - endpoint: string (HTTP base URL, e.g. "https://storage1.massa.net" or empty)
+ *   - p2pAddrs: Array<string> (libp2p multiaddrs; may be empty)
+ */
+export function updateProviderMetadata(binaryArgs: StaticArray<u8>): void {
+  assertNotPaused();
+
+  const caller = Context.caller().toString();
+
+  // Only registered storage nodes can set metadata.
+  const node = getNode(caller);
+  assert(node !== null, 'Node not registered');
+
+  const args = new Args(binaryArgs);
+  const endpoint = args
+    .nextString()
+    .expect('endpoint argument is missing or invalid');
+  const p2pAddrs = args
+    .nextStringArray()
+    .expect('p2pAddrs argument is missing or invalid');
+
+  const stored = new Args().add(endpoint).add<Array<string>>(p2pAddrs);
+  Storage.set(stringToBytes(providerMetadataKey(caller)), stored.serialize());
+
+  generateEvent(
+    'PROVIDER_METADATA_UPDATED:' + caller + ',' + endpoint.toString(),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // VIEW FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════
@@ -622,6 +663,33 @@ export function getNodeInfo(binaryArgs: StaticArray<u8>): StaticArray<u8> {
   assert(node !== null, 'Node not found');
 
   return node!.serialize();
+}
+
+/**
+ * Get provider metadata (HTTP endpoint and P2P multiaddrs) for a storage node.
+ * This allows external clients to discover how to reach a storage provider
+ * given its Massa address.
+ *
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ * @returns Serialized Args:
+ *   - endpoint: string (HTTP base URL or empty string if not set)
+ *   - p2pAddrs: Array<string> (libp2p multiaddrs; may be empty)
+ */
+export function getProviderMetadataView(
+  binaryArgs: StaticArray<u8>,
+): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  const key = stringToBytes(providerMetadataKey(address));
+  if (!Storage.has(key)) {
+    // For now we treat missing metadata as "not set".
+    // Return empty endpoint and empty P2P address list.
+    return new Args().add('').add<Array<string>>([]).serialize();
+  }
+
+  return Storage.get(key);
 }
 
 /**

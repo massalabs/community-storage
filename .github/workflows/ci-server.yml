@@ -29,7 +29,7 @@ jobs:
           - os: windows-latest
             artifact_name: massa-storage-server-windows-x64
             binary_path: server/target/release/massa-storage-server.exe
-          - os: macos-13
+          - os: macos-15
             artifact_name: massa-storage-server-macos-x64
             binary_path: server/target/release/massa-storage-server
           - os: macos-latest
