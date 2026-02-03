@@ -25,9 +25,9 @@ export function Sandbox() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 p-8 text-center">
+        <div className="rounded-xl border border-dashed border-amber-500/40 bg-slate-800/50 p-8 text-center">
           <p className="text-amber-200/90">
-            Éditez <code className="rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-sm">front/src/pages/Sandbox.jsx</code> pour ajouter du contenu.
+            Éditez <code className="rounded bg-slate-700 px-1.5 py-0.5 font-mono text-sm">front/src/pages/Sandbox.jsx</code> pour ajouter du contenu.
           </p>
           <p className="mt-2 text-sm text-slate-500">
             Vous pouvez aussi créer de nouvelles pages, les importer ici ou dans le Layout (dans un <code className="rounded bg-slate-700 px-1 font-mono text-xs">SandboxOnly</code>), et utiliser <code className="rounded bg-slate-700 px-1 font-mono text-xs">isSandboxMode()</code> pour brancher de la logique.

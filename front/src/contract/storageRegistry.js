@@ -137,4 +137,41 @@ export async function getContractBalance(final = true) {
   return sc.balance(final)
 }
 
+/**
+ * Lit l'adresse d'un nœud par index (pour lister les providers).
+ * @param {number|bigint} index - Index (0 à totalNodes - 1)
+ * @returns {Promise<string>} Adresse ou '' si hors limites
+ */
+export async function getNodeAddressAt(index) {
+  const sc = getContract()
+  const args = new Args().addU64(BigInt(index))
+  const res = await sc.read('getNodeAddressAt', args)
+  if (res.info?.error) return ''
+  const out = new Args(res.value)
+  return out.nextString() || ''
+}
+
+/**
+ * Liste des providers avec place dispo (version réelle : lit la liste on-chain).
+ * Chaque item : { address, allocatedGb, usedGb?, availableGb }. usedGb non exposé par le contrat → availableGb = allocatedGb.
+ * @returns {Promise<Array<{ address, allocatedGb, usedGb?, availableGb }>>}
+ */
+export async function getStorageProviders() {
+  const total = await getTotalNodes()
+  const n = Number(total)
+  if (n === 0) return []
+  const list = []
+  for (let i = 0; i < n; i++) {
+    const address = await getNodeAddressAt(i)
+    if (!address) continue
+    const info = await getNodeInfo(address)
+    if (!info || !info.active) continue
+    const allocatedGb = info.allocatedGb
+    const usedGb = info.usedGb != null ? info.usedGb : 0n
+    const availableGb = allocatedGb - usedGb
+    list.push({ address, allocatedGb, usedGb, availableGb: availableGb > 0n ? availableGb : allocatedGb })
+  }
+  return list
+}
+
 export { CONTRACT_ADDRESS }

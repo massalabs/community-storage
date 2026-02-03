@@ -1,75 +1,134 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getConfig } from '../contract/storageRegistryApi'
+import {
+  getConfig,
+  getCurrentPeriod,
+  getPeriodStats,
+  getStorageProviders,
+} from '../contract/storageRegistryApi'
 
-function formatRewardPerGb(nano) {
-  if (nano === undefined || nano === null) return null
-  const n = typeof nano === 'bigint' ? Number(nano) : nano
-  if (n >= 1e9) return `${(n / 1e9).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} MAS`
-  return `${(n / 1e9).toFixed(4)} MAS`
+function toNum(v) {
+  return typeof v === 'bigint' ? Number(v) : v
+}
+
+function formatMas(nano) {
+  const n = toNum(nano)
+  if (n >= 1e9) return `${(n / 1e9).toLocaleString('fr-FR')} MAS`
+  return `${n.toLocaleString('fr-FR')} nanoMAS`
 }
 
 export function Landing() {
   const [config, setConfig] = useState(null)
+  const [periodStats, setPeriodStats] = useState(null)
+  const [totalAvailableGb, setTotalAvailableGb] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    getConfig()
-      .then((c) => { if (!cancelled) setConfig(c) })
-      .catch(() => { if (!cancelled) setConfig(null) })
-      .finally(() => { if (!cancelled) setLoading(false) })
+    async function fetchData() {
+      setLoading(true)
+      setError(null)
+      try {
+        const [cfg, currentPeriod] = await Promise.all([
+          getConfig(),
+          getCurrentPeriod(),
+        ])
+        if (cancelled) return
+        setConfig(cfg)
+        let stats = null
+        try {
+          stats = await getPeriodStats(currentPeriod)
+          if (!cancelled) setPeriodStats(stats)
+        } catch (e) {
+          if (!cancelled) setPeriodStats(null)
+        }
+        try {
+          const providers = await getStorageProviders()
+          const sum = (providers || []).reduce((acc, p) => acc + toNum(p.availableGb ?? p.allocatedGb ?? 0), 0)
+          if (!cancelled) setTotalAvailableGb(sum)
+        } catch (e) {
+          if (!cancelled) setTotalAvailableGb(null)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e?.message || 'Erreur de chargement')
+          setConfig(null)
+          setPeriodStats(null)
+          setTotalAvailableGb(null)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    fetchData()
     return () => { cancelled = true }
   }, [])
 
-  const rewardPerGb = config?.rewardPerGbPerPeriod
-  const pricingStr = rewardPerGb != null ? formatRewardPerGb(rewardPerGb) : null
+  const storedGb = periodStats != null ? toNum(periodStats.totalGbStored) : null
+  const rewardsMas = periodStats != null ? periodStats.totalRewardsDistributed : null
 
   return (
-    <div className="relative flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center overflow-hidden text-center">
-      {/* Subtle gradient glow behind title */}
-      <div
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(251,191,36,0.12),transparent)]"
-        aria-hidden
-      />
-      <h1 className="font-mono text-5xl font-bold tracking-tight text-white drop-shadow-sm sm:text-6xl md:text-7xl lg:text-8xl">
-        MASSA STORAGE
-      </h1>
-      <p className="mt-6 text-xl font-medium tracking-wide text-amber-400/95 sm:text-2xl md:text-3xl">
-        The first yield storage platform
-      </p>
-      <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-300">
-        Store your files in a decentralized way. Earn rewards for providing storage on the Massa network — stake, allocate capacity, and get paid in MAS.
-      </p>
-      {pricingStr && (
-        <div className="mt-8 rounded-xl border border-slate-600/80 bg-slate-800/50 px-6 py-4">
-          <p className="text-sm font-medium uppercase tracking-wider text-slate-500">
-            Storage pricing
-          </p>
-          <p className="mt-1 text-xl font-semibold text-amber-400">
-            {pricingStr} <span className="text-slate-400">/ GB / period</span>
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Same rate as node rewards — pay for storage, earn as a provider.
+    <div className="flex min-h-[calc(100vh-10rem)] flex-col justify-center">
+      <div className="mx-auto w-full max-w-4xl px-4">
+        {/* Hero : titre + ligne + concept */}
+        <div className="border-l-2 border-accent pl-8">
+          <h1 className="font-mono text-6xl font-semibold tracking-tight text-white sm:text-7xl md:text-8xl lg:text-9xl">
+            MASSA STORAGE
+          </h1>
+          <div className="mt-8 h-px w-32 bg-line-strong" aria-hidden />
+          <p className="mt-8 max-w-lg font-mono text-lg uppercase leading-relaxed tracking-wide text-zinc-500 sm:text-xl">
+            Stockage décentralisé. Récompenses en MAS pour les providers.
           </p>
         </div>
-      )}
-      {loading && !pricingStr && (
-        <div className="mt-8 h-14 w-48 animate-pulse rounded-xl bg-slate-800/50" aria-hidden />
-      )}
-      <div className="mt-14 flex flex-wrap items-center justify-center gap-4">
-        <Link
-          to="/dashboard"
-          className="rounded-lg border border-amber-500/50 bg-amber-500/20 px-6 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-500/30"
-        >
-          View dashboard
-        </Link>
-        <Link
-          to="/my-dashboard"
-          className="rounded-lg border border-slate-600 bg-slate-800 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
-        >
-          My dashboard
-        </Link>
+
+        {/* Grille 3 colonnes : indicateurs */}
+        <div className="mt-24 grid grid-cols-1 gap-px bg-line sm:grid-cols-3">
+          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+            <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
+              Poids stocké
+            </p>
+            <p className="mt-6 font-mono text-data-2xl tabular-nums text-white sm:text-data-xl">
+              {loading ? '—' : storedGb != null ? `${storedGb.toLocaleString('fr-FR')} GB` : '—'}
+            </p>
+          </div>
+          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+            <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
+              Poids dispo
+            </p>
+            <p className="mt-6 font-mono text-data-2xl tabular-nums text-white sm:text-data-xl">
+              {loading ? '—' : totalAvailableGb != null ? `${totalAvailableGb.toLocaleString('fr-FR')} GB` : '—'}
+            </p>
+          </div>
+          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+            <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
+              Récompenses totales
+            </p>
+            <p className="mt-6 font-mono text-data-2xl tabular-nums text-accent sm:text-data-xl">
+              {loading ? '—' : rewardsMas != null ? formatMas(rewardsMas) : '—'}
+            </p>
+          </div>
+        </div>
+
+        {error && !config && (
+          <p className="mt-6 text-sm text-red-400/90">{error}</p>
+        )}
+
+        {/* CTA */}
+        <div className="mt-20 flex flex-wrap gap-10">
+          <Link
+            to="/upload"
+            className="font-mono border border-line bg-surface px-10 py-5 text-lg font-medium uppercase tracking-wide text-white hover:border-accent hover:text-accent transition-colors"
+          >
+            Upload
+          </Link>
+          <Link
+            to="/provide-storage"
+            className="font-mono border border-line px-10 py-5 text-lg font-medium uppercase tracking-wide text-zinc-500 hover:border-line-strong hover:text-zinc-300 transition-colors"
+          >
+            Provide Storage
+          </Link>
+        </div>
       </div>
     </div>
   )

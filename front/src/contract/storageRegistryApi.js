@@ -52,6 +52,11 @@ export async function getContractBalance(final = true) {
   return api().getContractBalance(final)
 }
 
+/** Liste des providers de stockage avec place dispo (allocatedGb, usedGb?, availableGb). */
+export async function getStorageProviders() {
+  return api().getStorageProviders()
+}
+
 /** True si l'app tourne en mode bac à sable (données fictives). */
 export function isSandboxMode() {
   return getSandbox()

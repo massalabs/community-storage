@@ -2,11 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Évite l'écran blanc avant le rendu React */
+:root {
+  --bg: #050508;
+  --surface: #0c0c10;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --accent: #00e5ff;
+  --accent-dim: rgba(0, 229, 255, 0.15);
+  --text: #fafafa;
+  --text-muted: #71717a;
+  --grid-size: 8px;
+}
+
 html, body, #root {
   min-height: 100vh;
   margin: 0;
 }
+
 body {
-  background-color: #0f172a;
+  font-family: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: "tnum" 1;
+}
+
+/* Grille de fond optionnelle (géométrie) */
+.grid-bg {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+}
+
+/* Cadre géométrique : bord gauche accent */
+.geo-frame {
+  border-left: 2px solid var(--accent);
+}
+
+/* Glassmorphism : flou marqué, transparence */
+.glass-panel {
+  background: rgba(5, 5, 8, 0.32);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Overlay modales : flou */
+.glass-overlay {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Séparateur vertical (nav) */
+.vertical-sep {
+  width: 1px;
+  height: 1rem;
+  background: var(--line-strong);
+  flex-shrink: 0;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
 }

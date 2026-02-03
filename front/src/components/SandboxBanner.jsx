@@ -1,10 +1,10 @@
 export function SandboxBanner() {
   return (
     <div
-      className="border-b border-amber-500/40 bg-amber-500/15 px-4 py-2 text-center text-sm font-medium text-amber-200"
+      className="glass-panel border-b border-line border-l-2 border-l-accent px-6 py-2 text-center text-xs uppercase tracking-wide text-zinc-500"
       role="status"
     >
-      Bac à sable — données fictives, aucun impact sur le contrat réel. Pour voir les vraies données, cliquez sur « Réelles » dans la barre ci-dessous.
+      Bac à sable — données fictives.
     </div>
   )
 }

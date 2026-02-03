@@ -44,6 +44,7 @@ const STORAGE_ADMIN_PREFIX = 'storage_admin_';
 const ADMIN_KEY = 'admin';
 const CONFIG_KEY = 'config';
 const TOTAL_NODES_KEY = 'total_nodes';
+const NODE_INDEX_PREFIX = 'node_idx_';
 const PAUSED_KEY = 'paused';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -56,6 +57,22 @@ function nodeKey(address: string): string {
 
 function providerMetadataKey(address: string): string {
   return PROVIDER_META_PREFIX + address;
+}
+
+function nodeIndexKey(index: u64): string {
+  return NODE_INDEX_PREFIX + index.toString();
+}
+
+function getNodeAddressAtInternal(index: u64): string {
+  const total = getTotalNodes();
+  if (index >= total) {
+    return '';
+  }
+  const key = stringToBytes(nodeIndexKey(index));
+  if (!Storage.has(key)) {
+    return '';
+  }
+  return bytesToString(Storage.get(key));
 }
 
 function challengeKey(id: string): string {
@@ -279,8 +296,12 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
     setNodeIndex(index);
   }
 
+  // Append address to index list (for getNodeAddressAt)
+  const idx = getTotalNodes();
+  Storage.set(stringToBytes(nodeIndexKey(idx)), stringToBytes(caller));
+
   // Update total nodes count
-  setTotalNodes(getTotalNodes() + 1);
+  setTotalNodes(idx + 1);
 
   // Update period stats
   const stats = getPeriodStats(Context.currentPeriod());
@@ -356,8 +377,16 @@ export function unregisterStorageNode(_: StaticArray<u8>): void {
   node!.active = false;
   setNode(node!);
 
-  // Update total nodes count
-  setTotalNodes(getTotalNodes() - 1);
+  // Remove from index list: swap with last, then decrement
+  const total = getTotalNodes();
+  for (let i: u64 = 0; i < total; i++) {
+    if (getNodeAddressAtInternal(i) == caller) {
+      const lastAddr = getNodeAddressAtInternal(total - 1);
+      Storage.set(stringToBytes(nodeIndexKey(i)), stringToBytes(lastAddr));
+      break;
+    }
+  }
+  setTotalNodes(total - 1);
 
   // Update period stats
   const stats = getPeriodStats(Context.currentPeriod());
@@ -773,6 +802,20 @@ export function getConfigView(_: StaticArray<u8>): StaticArray<u8> {
  */
 export function getTotalNodesCount(_: StaticArray<u8>): StaticArray<u8> {
   return u64ToBytes(getTotalNodes());
+}
+
+/**
+ * Get node address by index (for listing providers).
+ * @param binaryArgs - Serialized Args containing: index (u64)
+ * @returns Serialized string (address, or empty if index out of range)
+ */
+export function getNodeAddressAt(binaryArgs: StaticArray<u8>): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const index = args.nextU64().expect('index argument is missing');
+  const address = getNodeAddressAtInternal(index);
+  const out = new Args();
+  out.add(address);
+  return out.serialize();
 }
 
 /**

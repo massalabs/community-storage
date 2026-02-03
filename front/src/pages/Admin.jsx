@@ -112,7 +112,7 @@ export function Admin() {
             value={loading ? '…' : formatNanoMas(balance ?? 0n)}
             subtext="Balance finale (récompenses disponibles)"
           />
-          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5">
+          <div className="rounded-xl border border-slate-600 bg-slate-800/50 p-5">
             <p className="text-sm font-medium text-slate-400">Adresse du contrat</p>
             <p className="mt-1 break-all font-mono text-sm text-slate-300" title={getContractAddress()}>
               {getContractAddress()}
@@ -149,7 +149,7 @@ export function Admin() {
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
               disabled={sandbox}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 font-mono text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/50 disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 font-mono text-white placeholder-slate-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60"
             />
           </div>
           {depositError && (

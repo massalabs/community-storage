@@ -1,10 +1,10 @@
 export function StatCard({ label, value, subtext, icon }) {
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5">
-      {icon && <div className="mb-3 text-slate-400">{icon}</div>}
-      <p className="text-sm font-medium text-slate-400">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
-      {subtext && <p className="mt-1 text-xs text-slate-500">{subtext}</p>}
+    <div className="glass-panel geo-frame border border-line border-l-2 border-l-accent p-5">
+      {icon && <div className="mb-2 text-zinc-500">{icon}</div>}
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
+      <p className="mt-2 font-mono text-xl tabular-nums text-white">{value}</p>
+      {subtext && <p className="mt-1 text-xs text-zinc-500">{subtext}</p>}
     </div>
   )
 }

@@ -1,9 +1,10 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Admin } from './pages/Admin'
-import { Dashboard } from './pages/Dashboard'
 import { Landing } from './pages/Landing'
-import { MyDashboard } from './pages/MyDashboard'
+import { ProvideStorage } from './pages/ProvideStorage'
+import { StoreFiles } from './pages/StoreFiles'
+import { MyFiles } from './pages/MyFiles'
 import { Sandbox } from './pages/Sandbox'
 
 function App() {
@@ -11,8 +12,12 @@ function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/my-dashboard" element={<MyDashboard />} />
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/provide-storage" element={<ProvideStorage />} />
+        <Route path="/upload" element={<StoreFiles />} />
+        <Route path="/store-files" element={<Navigate to="/upload" replace />} />
+        <Route path="/my-files" element={<MyFiles />} />
+        <Route path="/my-dashboard" element={<Navigate to="/provide-storage" replace />} />
         <Route path="/sandbox" element={<Sandbox />} />
         <Route path="/admin" element={<Admin />} />
       </Routes>
