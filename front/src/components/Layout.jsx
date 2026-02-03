@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
 import { isSandboxMode, setSandboxMode } from '../contract/storageRegistryApi'
+import { FloatingFileIcons } from './FloatingFileIcons'
 import { SandboxBanner } from './SandboxBanner'
+import { SnakeTrails } from './SnakeTrail'
+import { SonarDots } from './SonarDots'
 import { SandboxOnly } from './SandboxOnly'
 
 function truncateAddress(addr) {
@@ -17,11 +21,12 @@ function formatBalance(nano) {
   return `${(n / 1e9).toFixed(4)} MAS`
 }
 
-
 export function Layout({ children }) {
   const [accountBalances, setAccountBalances] = useState({})
+  const [walletMenuOpen, setWalletMenuOpen] = useState(false)
   const {
     address,
+    account,
     connected,
     connecting,
     error,
@@ -36,6 +41,7 @@ export function Layout({ children }) {
     availableAccounts,
     selectAccount,
     closeAccountPicker,
+    openAccountPicker,
   } = useWallet()
   const location = useLocation()
   const pathname = location?.pathname ?? '/'
@@ -73,7 +79,11 @@ export function Layout({ children }) {
   const showModeToggle = import.meta.env.DEV
 
   return (
-    <div className="min-h-screen grid-bg bg-bg text-zinc-100">
+    <div className="relative min-h-screen grid-bg bg-bg text-zinc-100">
+      <FloatingFileIcons />
+      <SnakeTrails />
+      <SonarDots />
+      <div className="relative z-10">
       {sandbox && <SandboxBanner />}
       {showModeToggle && !sandbox && (
         <div className="border-b border-line border-l-2 border-l-emerald-500/80 bg-emerald-500/10 px-6 py-2 text-center font-mono text-xs uppercase tracking-wide text-emerald-400/90">
@@ -146,20 +156,79 @@ export function Layout({ children }) {
             >
               Upload
             </Link>
-            {error && <span className="text-base text-red-400/90" title={error}>{error.slice(0, 24)}…</span>}
+            {error && !connected && (
+              <span className="text-base text-red-400/90" title={error}>{error.slice(0, 24)}…</span>
+            )}
             {connected ? (
-              <>
-                <span className="font-mono tabular-nums text-zinc-500" title={address}>
-                  {truncateAddress(address)}
-                </span>
+              <div className="relative">
                 <button
                   type="button"
-                  onClick={disconnect}
-                  className="font-mono uppercase tracking-wide text-zinc-500 hover:text-zinc-300 transition-colors"
+                  onClick={() => setWalletMenuOpen((o) => !o)}
+                  className="font-mono tabular-nums text-zinc-300 hover:text-accent transition-colors border border-white/[0.08] hover:border-line px-3 py-2 rounded"
+                  title={address}
                 >
-                  Déconnexion
+                  {getAccountLabel(account) || truncateAddress(address)}
                 </button>
-              </>
+                {walletMenuOpen && createPortal(
+                  <>
+                    <div
+                      className="fixed inset-0 z-[99998] bg-black/20"
+                      aria-hidden="true"
+                      onClick={() => setWalletMenuOpen(false)}
+                    />
+                    <div
+                      className="card-panel fixed right-6 top-[4.5rem] z-[99999] min-w-[220px] p-3"
+                      role="dialog"
+                      aria-label="Menu wallet"
+                    >
+                      {error && (
+                        <p className="mb-2 text-xs text-red-400/90" title={error}>
+                          {error.slice(0, 40)}{error.length > 40 ? '…' : ''}
+                        </p>
+                      )}
+                      <div className="mb-3">
+                        <div className="font-mono text-sm font-medium text-white truncate">
+                          {getAccountLabel(account) || 'Compte'}
+                        </div>
+                        <div className="font-mono text-xs text-zinc-500" title={address}>
+                          {truncateAddress(address)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(address)
+                          setWalletMenuOpen(false)
+                        }}
+                        className="geo-frame w-full border-y border-r border-line bg-white/5 py-2.5 px-3 text-left text-sm text-zinc-300 hover:bg-white/10 transition-colors uppercase tracking-wide"
+                      >
+                        Copier l'adresse
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWalletMenuOpen(false)
+                          openAccountPicker()
+                        }}
+                        className="geo-frame mt-1.5 w-full border-y border-r border-line bg-white/5 py-2.5 px-3 text-left text-sm text-zinc-300 hover:bg-white/10 transition-colors uppercase tracking-wide"
+                      >
+                        Changer de compte
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWalletMenuOpen(false)
+                          disconnect()
+                        }}
+                        className="geo-frame mt-1.5 w-full border-y border-r border-line bg-white/5 py-2.5 px-3 text-left text-sm text-red-400/90 hover:bg-red-500/10 transition-colors uppercase tracking-wide"
+                      >
+                        Déconnexion
+                      </button>
+                    </div>
+                  </>,
+                  document.body
+                )}
+              </div>
             ) : (
               <button
                 type="button"
@@ -167,7 +236,7 @@ export function Layout({ children }) {
                 disabled={connecting}
                 className="font-mono border border-line bg-surface px-5 py-2.5 font-medium uppercase tracking-wide text-white hover:border-accent/50 hover:text-accent disabled:opacity-50 transition-colors"
               >
-                {connecting ? '…' : 'Connexion'}
+                {connecting ? '…' : 'Connect wallet'}
               </button>
             )}
           </nav>
@@ -176,7 +245,7 @@ export function Layout({ children }) {
 
       {accountPickerOpen && (
         <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center" onClick={closeAccountPicker} role="dialog" aria-modal="true" aria-label="Choisir un compte">
-          <div className="glass-panel w-full max-w-md border border-line border-l-2 border-l-accent p-8" onClick={(e) => e.stopPropagation()}>
+          <div className="card-panel w-full max-w-md p-8" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-mono text-lg font-semibold uppercase tracking-wide text-white">Choisir un compte</h3>
             <p className="mt-2 text-xs text-zinc-500">
               Plusieurs comptes trouvés. Sélectionnez celui à utiliser.
@@ -190,7 +259,7 @@ export function Layout({ children }) {
                     className="geo-frame flex w-full flex-col items-start border-y border-r border-line bg-white/5 p-4 text-left hover:bg-white/10 transition-colors"
                   >
                     <div className="flex w-full items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-white">{getAccountLabel(acc)}</span>
+                      <span className="text-sm font-medium text-white truncate">{getAccountLabel(acc)}</span>
                       <span className="text-xs tabular-nums text-accent">
                         {formatBalance(accountBalances[acc?.address])}
                       </span>
@@ -211,7 +280,7 @@ export function Layout({ children }) {
 
       {walletPickerOpen && (
         <div className="glass-overlay fixed inset-0 z-50 flex items-center justify-center" onClick={closeWalletPicker} role="dialog" aria-modal="true" aria-label="Choisir un wallet">
-          <div className="glass-panel w-full max-w-sm border border-line border-l-2 border-l-accent p-8" onClick={(e) => e.stopPropagation()}>
+          <div className="card-panel w-full max-w-sm p-8" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-mono text-lg font-semibold uppercase tracking-wide text-white">Choisir un wallet</h3>
             <p className="mt-2 text-xs text-zinc-500">
               Massa Station ou Bearby.
@@ -243,6 +312,7 @@ export function Layout({ children }) {
       )}
 
       <main className="mx-auto max-w-content px-6 py-12">{children}</main>
+      </div>
     </div>
   )
 }

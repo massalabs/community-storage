@@ -34,6 +34,81 @@ body {
   background-size: var(--grid-size) var(--grid-size);
 }
 
+/* Animation des pictos fichier en arrière-plan (pixel art) */
+@keyframes float-file {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.06;
+  }
+  25% {
+    transform: translate(6px, -12px) scale(1.02);
+    opacity: 0.08;
+  }
+  50% {
+    transform: translate(-4px, -8px) scale(0.98);
+    opacity: 0.05;
+  }
+  75% {
+    transform: translate(8px, 4px) scale(1.01);
+    opacity: 0.07;
+  }
+}
+.animate-float-file {
+  animation: float-file ease-in-out infinite;
+}
+
+/* Traînées type Snake : points qui se déplacent en arrière-plan */
+@keyframes snake-trail-right {
+  from { transform: translate(0, 0); }
+  to { transform: translate(120vw, 0); }
+}
+@keyframes snake-trail-left {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-120vw, 0); }
+}
+@keyframes snake-trail-down {
+  from { transform: translate(0, 0); }
+  to { transform: translate(0, 120vh); }
+}
+@keyframes snake-trail-up {
+  from { transform: translate(0, 0); }
+  to { transform: translate(0, -120vh); }
+}
+.animate-snake-trail {
+  display: flex;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.animate-snake-trail.snake-right { animation-name: snake-trail-right; }
+.animate-snake-trail.snake-left { animation-name: snake-trail-left; }
+.animate-snake-trail.snake-down { animation-name: snake-trail-down; }
+.animate-snake-trail.snake-up { animation-name: snake-trail-up; }
+
+/* Points en arrière-plan : apparaissent puis disparaissent */
+@keyframes bg-dot {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  10% {
+    opacity: 0.22;
+    transform: scale(1);
+  }
+  40% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+.animate-bg-dot {
+  animation: bg-dot 4s ease-in-out infinite;
+}
+
 /* Cadre géométrique : bord gauche accent */
 .geo-frame {
   border-left: 2px solid var(--accent);
@@ -45,6 +120,16 @@ body {
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Style carte = même fond que le popup wallet (glass + bordure + barre gauche accent) */
+.card-panel {
+  background: rgba(5, 5, 8, 0.32);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
 }
 
 /* Overlay modales : flou */
@@ -62,9 +147,67 @@ body {
   flex-shrink: 0;
 }
 
+/* Cases à cocher style app (My Files) */
+.file-checkbox-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.file-checkbox-wrap input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.file-checkbox-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.file-checkbox-wrap:hover .file-checkbox-box {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+.file-checkbox-wrap input:focus-visible + .file-checkbox-box {
+  box-shadow: 0 0 0 2px var(--accent);
+  outline: none;
+}
+.file-checkbox-wrap input:checked + .file-checkbox-box {
+  border-left: 2px solid var(--accent);
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-dim);
+}
+.file-checkbox-wrap input:checked + .file-checkbox-box::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  margin-bottom: 2px;
+  border: solid var(--accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 @layer base {
   * {
     border-color: var(--line);
+  }
+
+  /* Dropdowns : fond sombre et texte lisible (liste des options) */
+  select {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+  select option {
+    background-color: var(--surface);
+    color: var(--text);
   }
 }
 

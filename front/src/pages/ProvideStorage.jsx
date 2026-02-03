@@ -94,7 +94,7 @@ export function ProvideStorage() {
     return (
       <div className="space-y-8">
         <h1 className="text-xl font-semibold tracking-tight text-white">{PAGE_TITLE}</h1>
-        <div className="glass-panel geo-frame border border-line p-6">
+        <div className="card-panel p-6">
           <p className="font-medium">Connectez votre wallet</p>
           <p className="mt-1 text-sm text-amber-200/80">
             Connectez-vous pour voir l’occupation de votre stockage, vos récompenses et les infos de votre nœud.
@@ -124,7 +124,7 @@ export function ProvideStorage() {
         <div className="border-l-2 border-accent pl-6">
           <h1 className="text-xl font-semibold text-white">{PAGE_TITLE}</h1>
         </div>
-        <div className="glass-panel border border-line border-l-2 border-l-red-500/60 p-4">
+        <div className="card-panel border-l-red-500/60 p-4">
           <p className="text-xs font-medium uppercase text-red-400/90">Erreur</p>
           <p className="mt-1 text-xs text-zinc-400">{error}</p>
         </div>
@@ -139,7 +139,7 @@ export function ProvideStorage() {
         <p className="text-zinc-500">
           Vue d’ensemble de votre nœud de stockage — occupation, récompenses et statistiques.
         </p>
-        <div className="glass-panel geo-frame border border-line p-6">
+        <div className="card-panel p-6">
           <p className="font-medium text-white">Vous n’êtes pas enregistré comme nœud de stockage</p>
           <p className="mt-2 text-sm text-zinc-500">
             Enregistrez votre nœud pour allouer du stockage et gagner des récompenses MAS.
@@ -183,7 +183,7 @@ export function ProvideStorage() {
       {/* Occupation du stockage */}
       <section>
         <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-zinc-500">Occupation du stockage</h2>
-        <div className="glass-panel geo-frame border border-line p-6">
+        <div className="card-panel p-6">
           <div className="flex flex-wrap items-baseline gap-2">
             <span className="text-3xl font-bold text-white">{occupationLabel}</span>
             {usedGb != null && allocatedGb > 0 && (
@@ -209,7 +209,7 @@ export function ProvideStorage() {
             value={config ? formatNanoMas(estimatePerPeriodNano) : '…'}
             subtext="Par période (allocated GB × reward/GB)"
           />
-          <div className="glass-panel geo-frame border border-line p-5">
+          <div className="card-panel p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Rewards available</p>
             <p className="mt-1 font-mono text-xl tabular-nums text-accent">{formatNanoMas(pendingRewards)}</p>
             {hasPendingRewards && !sandbox && account && (
@@ -259,7 +259,7 @@ export function ProvideStorage() {
         </div>
       </section>
 
-      <div className="glass-panel border border-line px-4 py-2 text-sm text-zinc-500">
+      <div className="card-panel px-4 py-2 text-sm text-zinc-500">
         Adresse du nœud : <span className="font-mono text-zinc-500">{address}</span>
       </div>
     </div>

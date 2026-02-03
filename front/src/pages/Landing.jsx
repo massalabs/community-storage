@@ -12,10 +12,13 @@ function toNum(v) {
   return typeof v === 'bigint' ? Number(v) : v
 }
 
+/** Affiche toujours en MAS (nanoMAS / 1e9). */
 function formatMas(nano) {
   const n = toNum(nano)
-  if (n >= 1e9) return `${(n / 1e9).toLocaleString('fr-FR')} MAS`
-  return `${n.toLocaleString('fr-FR')} nanoMAS`
+  const mas = n / 1e9
+  if (mas >= 1) return `${Math.floor(mas).toLocaleString('fr-FR')} MAS`
+  if (mas > 0) return `${mas.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} MAS`
+  return '0 MAS'
 }
 
 export function Landing() {
@@ -85,7 +88,7 @@ export function Landing() {
 
         {/* Grille 3 colonnes : indicateurs */}
         <div className="mt-24 grid grid-cols-1 gap-px bg-line sm:grid-cols-3">
-          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+          <div className="card-panel border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
             <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
               Poids stocké
             </p>
@@ -93,7 +96,7 @@ export function Landing() {
               {loading ? '—' : storedGb != null ? `${storedGb.toLocaleString('fr-FR')} GB` : '—'}
             </p>
           </div>
-          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+          <div className="card-panel border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
             <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
               Poids dispo
             </p>
@@ -101,7 +104,7 @@ export function Landing() {
               {loading ? '—' : totalAvailableGb != null ? `${totalAvailableGb.toLocaleString('fr-FR')} GB` : '—'}
             </p>
           </div>
-          <div className="glass-panel geo-frame border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
+          <div className="card-panel border-r border-b border-t border-line p-10 sm:border-b-0 sm:border-t">
             <p className="font-mono text-base font-medium uppercase tracking-wide text-zinc-500">
               Récompenses totales
             </p>
@@ -112,7 +115,7 @@ export function Landing() {
         </div>
 
         {error && !config && (
-          <div className="mt-6 glass-panel border border-line border-l-red-500/60 p-4">
+          <div className="mt-6 card-panel border-l-red-500/60 p-4">
             <p className="font-mono text-sm font-medium text-red-400/90">Erreur de chargement</p>
             <p className="mt-1 text-sm text-zinc-400">{error}</p>
             {!isSandboxMode() && (

@@ -68,20 +68,42 @@ export function WalletProvider({ children }) {
     setConnecting(false)
   }, [])
 
+  const openAccountPicker = useCallback(async () => {
+    if (!wallet) return
+    setError(null)
+    try {
+      const accounts = await wallet.accounts()
+      if (!accounts?.length) return
+      if (accounts.length === 1) return
+      setPendingWallet(null)
+      setAvailableAccounts(accounts)
+      setAccountPickerOpen(true)
+    } catch (e) {
+      setError(e?.message ?? 'Erreur')
+    }
+  }, [wallet])
+
   const selectAccount = useCallback((acc) => {
     const addr = acc?.address ?? null
-    if (!addr || !pendingWallet) return
-    setAddress(addr)
-    setAccount(acc)
-    setWallet(pendingWallet)
-    setConnected(true)
-    setAccountPickerOpen(false)
-    setAvailableAccounts([])
-    setPendingWallet(null)
-    setWalletPickerOpen(false)
-    setAvailableWallets([])
-    setConnecting(false)
-  }, [pendingWallet])
+    if (!addr) return
+    if (pendingWallet) {
+      setAddress(addr)
+      setAccount(acc)
+      setWallet(pendingWallet)
+      setConnected(true)
+      setAccountPickerOpen(false)
+      setAvailableAccounts([])
+      setPendingWallet(null)
+      setWalletPickerOpen(false)
+      setAvailableWallets([])
+      setConnecting(false)
+    } else if (wallet) {
+      setAddress(addr)
+      setAccount(acc)
+      setAccountPickerOpen(false)
+      setAvailableAccounts([])
+    }
+  }, [pendingWallet, wallet])
 
   const connectWith = useCallback(async (w) => {
     setConnecting(true)
@@ -150,6 +172,7 @@ export function WalletProvider({ children }) {
     availableAccounts,
     selectAccount,
     closeAccountPicker,
+    openAccountPicker,
   }
 
   return (
