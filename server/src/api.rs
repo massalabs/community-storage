@@ -10,7 +10,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::storage::{IndexEntry, Storage};
+use crate::storage::Storage;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -140,7 +140,7 @@ pub fn router(storage: Storage) -> Router {
         .route("/health", get(health))
         .route("/upload", post(upload))
         .route("/data", get(list))
-        .route("/data/:id", get(get_by_id))
-        .route("/data/:namespace/:id", get(get_by_namespace_id))
+        .route("/data/{id}", get(get_by_id))
+        .route("/data/{namespace}/{id}", get(get_by_namespace_id))
         .with_state(state)
 }

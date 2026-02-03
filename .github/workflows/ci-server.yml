@@ -45,7 +45,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
 
@@ -92,7 +92,7 @@ jobs:
           apple-app-password: ${{ secrets.APPLE_APP_PASSWORD }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.binary_path }}
@@ -109,7 +109,7 @@ jobs:
           targets: aarch64-unknown-linux-gnu
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
 
@@ -128,7 +128,7 @@ jobs:
         working-directory: server
 
       - name: Upload binary
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@v4
         with:
           name: massa-storage-server-linux-arm
           path: server/target/aarch64-unknown-linux-gnu/release/massa-storage-server

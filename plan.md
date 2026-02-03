@@ -320,6 +320,41 @@ API returns response (JSON list or binary block)
 
 ---
 
+## Server-to-server sync (how servers transfer data)
+
+Storage servers sync with each other via **P2P replication**: they exchange **chunk announcements** and **chunk request/response** messages so that each chunk is stored on a fixed number of replicas (replication factor, e.g. 3–5).
+
+### Mechanism
+
+1. **Announce (who has what)**  
+   When a server stores new chunks (after an upload or after chunking period data), it **announces** the chunk IDs (and period) to the P2P layer: **ChunkAnnouncement { chunk_ids, period }**. Other servers receive these announcements.
+
+2. **Assign (who should store what)**  
+   Each server runs the same **deterministic** assignment: for each chunk ID, compute which nodes are responsible (e.g. `chunk_hash mod node_count` or a consistent hash over the set of known storage nodes). If **this** server is among the replicas for a chunk, it decides it should store it.
+
+3. **Pull (fetch missing chunks)**  
+   If this server is assigned to store a chunk but does not have it yet, it sends **ChunkRequest { chunk_id }** to a peer that announced it (or to any peer that might have it). The peer responds with **ChunkResponse { chunk_id, data, merkle_proof }**. The receiver **verifies the Merkle proof** and then stores the chunk locally. No trust: verification ensures the data matches the announced root.
+
+4. **Network**  
+   - **Option A — Direct:** Storage servers form their own P2P overlay (e.g. libp2p or a simple TCP mesh). They discover each other via config (bootstrap peers) or a small registry.  
+   - **Option B — Relay:** Storage servers do not open their own P2P; they send/receive **StorageMessage** (ChunkAnnouncement, ChunkRequest, ChunkResponse) through the **Massa node’s** protocol layer. The node carries storage messages like other message types; storage servers are clients of the node’s P2P.
+
+So sync is **pull-based**: servers announce what they have; others pull only the chunks they are assigned to store. There is no “push from one server to all”; each server pulls its own set of chunks from peers that announced them.
+
+### Summary
+
+| Step | Who | What |
+|------|-----|------|
+| Announce | Server that just stored chunks | Sends ChunkAnnouncement(chunk_ids, period) on P2P |
+| Assign | Every server | Deterministic rule: “am I a replica for this chunk_id?” |
+| Request | Server that is replica but lacks chunk | Sends ChunkRequest(chunk_id) to a peer |
+| Response | Peer that has the chunk | Sends ChunkResponse(chunk_id, data, merkle_proof) |
+| Verify & store | Requesting server | Verifies Merkle proof, then stores chunk locally |
+
+Replication factor is enforced by the assignment rule (e.g. top-K by hash); challenges (Phase 4) then verify that assigned servers actually hold the data.
+
+---
+
 ## Critical Files Reference
 
 ### Files to Create (New Modules)

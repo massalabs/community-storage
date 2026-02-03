@@ -15,6 +15,8 @@ Optional environment variables:
 - `STORAGE_PATH` — base directory for stored data (default: `./data`)
 - `BIND_ADDRESS` — listen address (default: `127.0.0.1:4343`)
 - `RUST_LOG` — log level (e.g. `info`, `debug`)
+- `P2P_LISTEN_ADDR` — libp2p listen multiaddr (default: `/ip4/0.0.0.0/tcp/0`)
+- `MASSA_ADDRESS` — Massa address identifying this storage provider (used for logging/identity and future SC integration)
 
 ## API
 
