@@ -35,6 +35,7 @@ import { StorageConfig } from '../structs/StorageConfig';
 // ═══════════════════════════════════════════════════════════════════
 
 const NODE_PREFIX = 'node_';
+const NODE_INDEX_KEY = 'node_index';
 const PROVIDER_META_PREFIX = 'provider_meta_';
 const CHALLENGE_PREFIX = 'chal_';
 const PERIOD_PREFIX = 'period_';
@@ -101,6 +102,22 @@ function getNode(address: string): StorageNode | null {
 
 function setNode(node: StorageNode): void {
   Storage.set(stringToBytes(nodeKey(node.address)), node.serialize());
+}
+
+function getNodeIndex(): Array<string> {
+  const key = stringToBytes(NODE_INDEX_KEY);
+  if (!Storage.has(key)) {
+    return [];
+  }
+  const args = new Args(Storage.get(key), 0);
+  return args.nextStringArray().expect('node index');
+}
+
+function setNodeIndex(addresses: Array<string>): void {
+  Storage.set(
+    stringToBytes(NODE_INDEX_KEY),
+    new Args().add<Array<string>>(addresses).serialize(),
+  );
 }
 
 function getChallenge(id: string): Challenge | null {
@@ -254,6 +271,13 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   // Create node (no staking required)
   const node = new StorageNode(caller, allocatedGb, Context.currentPeriod());
   setNode(node);
+
+  // Append to node index for enumeration (getRegisteredAddressesView)
+  const index = getNodeIndex();
+  if (!index.includes(caller)) {
+    index.push(caller);
+    setNodeIndex(index);
+  }
 
   // Update total nodes count
   setTotalNodes(getTotalNodes() + 1);
@@ -690,6 +714,17 @@ export function getProviderMetadataView(
   }
 
   return Storage.get(key);
+}
+
+/**
+ * Get all registered node addresses (for enumeration / list-providers script).
+ * Only includes addresses that registered after this view was added to the contract.
+ * @param _ - unused
+ * @returns Serialized Array<string> of Massa addresses
+ */
+export function getRegisteredAddressesView(_: StaticArray<u8>): StaticArray<u8> {
+  const addresses = getNodeIndex();
+  return new Args().add<Array<string>>(addresses).serialize();
 }
 
 /**

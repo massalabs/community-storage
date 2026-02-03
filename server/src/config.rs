@@ -9,6 +9,8 @@ pub struct Config {
     pub storage_path: PathBuf,
     /// Bind address for the HTTP server (e.g. `127.0.0.1:4343`).
     pub bind_address: String,
+    /// Storage size limit in GB (mandatory). Uploads are rejected when total usage would exceed this.
+    pub storage_limit_gb: u64,
     /// libp2p listen address (multiaddr), e.g. `/ip4/0.0.0.0/tcp/0`.
     pub p2p_listen_addr: String,
     /// Optional Massa address identifying this storage provider.
@@ -16,21 +18,11 @@ pub struct Config {
     pub massa_address: Option<String>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            storage_path: PathBuf::from("./data"),
-            bind_address: "127.0.0.1:4343".to_string(),
-            p2p_listen_addr: "/ip4/0.0.0.0/tcp/0".to_string(),
-            massa_address: None,
-        }
-    }
-}
-
 impl Config {
-    /// Create config from environment or defaults.
-    /// - `STORAGE_PATH` (optional): base path for data
+    /// Create config from environment.
+    /// - `STORAGE_PATH` (optional): base path for data (default: `./data`)
     /// - `BIND_ADDRESS` (optional): e.g. `127.0.0.1:4343`
+    /// - `STORAGE_LIMIT_GB` (required): max total storage in GB; uploads rejected when exceeded
     /// - `P2P_LISTEN_ADDR` (optional): libp2p multiaddr (default: `/ip4/0.0.0.0/tcp/0`)
     /// - `MASSA_ADDRESS` (optional): Massa address identifying this storage provider
     pub fn from_env() -> Self {
@@ -38,12 +30,17 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("./data"));
         let bind_address = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:4343".to_string());
+        let storage_limit_gb = std::env::var("STORAGE_LIMIT_GB")
+            .expect("STORAGE_LIMIT_GB is required")
+            .parse::<u64>()
+            .expect("STORAGE_LIMIT_GB must be a positive integer");
         let p2p_listen_addr = std::env::var("P2P_LISTEN_ADDR")
             .unwrap_or_else(|_| "/ip4/0.0.0.0/tcp/0".to_string());
         let massa_address = std::env::var("MASSA_ADDRESS").ok();
         Self {
             storage_path,
             bind_address,
+            storage_limit_gb,
             p2p_listen_addr,
             massa_address,
         }

@@ -53,12 +53,14 @@ pub async fn upload(
                 .into_response()
         }
         Err(e) => {
+            let msg = e.to_string();
+            let status = if msg.contains("storage limit exceeded") {
+                StatusCode::INSUFFICIENT_STORAGE // 507
+            } else {
+                StatusCode::BAD_REQUEST
+            };
             tracing::warn!(error = %e, "upload failed");
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": e.to_string() })),
-            )
-                .into_response()
+            (status, Json(serde_json::json!({ "error": msg }))).into_response()
         }
     }
 }
@@ -134,10 +136,49 @@ pub async fn health() -> &'static str {
     "ok"
 }
 
+/// Storage limit and usage (for external clients).
+#[derive(Debug, serde::Serialize)]
+pub struct StorageConfigResponse {
+    /// Storage limit in GB (from STORAGE_LIMIT_GB).
+    pub storage_limit_gb: u64,
+    /// Storage limit in bytes.
+    pub storage_limit_bytes: u64,
+    /// Current total size of stored data in bytes.
+    pub storage_used_bytes: u64,
+}
+
+/// GET /config — storage limit and current usage (available from the outside world).
+pub async fn storage_config(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let limit_bytes = state.storage.storage_limit_bytes();
+    let storage_limit_gb = limit_bytes / (1024 * 1024 * 1024);
+    match state.storage.total_size() {
+        Ok(used) => (
+            StatusCode::OK,
+            Json(StorageConfigResponse {
+                storage_limit_gb,
+                storage_limit_bytes: limit_bytes,
+                storage_used_bytes: used,
+            }),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to compute storage usage");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    }
+}
+
 pub fn router(storage: Storage) -> Router {
     let state = Arc::new(AppState { storage });
     Router::new()
         .route("/health", get(health))
+        .route("/config", get(storage_config))
         .route("/upload", post(upload))
         .route("/data", get(list))
         .route("/data/{id}", get(get_by_id))

@@ -13,6 +13,7 @@ import {
   getConfigView,
   getNodeInfo,
   getProviderMetadataView,
+  getRegisteredAddressesView,
   getIsStorageAdmin,
   addChallenger,
   addStorageAdmin,
@@ -139,6 +140,17 @@ describe('Storage Registry - Node Registration (No Staking)', () => {
 
     expect(node.allocatedGb).toBe(10);
     expect(node.active).toBe(true);
+  });
+
+  it('getRegisteredAddressesView returns registered node address', () => {
+    switchUser(NODE_ADDRESS);
+    registerStorageNode(new Args().add<u64>(10).serialize());
+
+    const viewBytes = getRegisteredAddressesView(new StaticArray<u8>(0));
+    const viewArgs = new Args(viewBytes);
+    const addresses = viewArgs.nextStringArray().expect('addresses');
+    expect(addresses.length).toBe(1);
+    expect(addresses[0]).toBe(NODE_ADDRESS);
   });
 
   throws('should fail with allocation below minimum', () => {

@@ -66,11 +66,24 @@ async fn run(
     let addr: Multiaddr = listen_addr.parse()?;
     swarm.listen_on(addr)?;
 
+    // Collect listen addresses for registry metadata (PROVIDER_P2P_ADDRS).
+    let mut listen_addrs: Vec<Multiaddr> = Vec::new();
+
     // Main event loop. For now we just log key events.
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
-                tracing::info!(%address, "libp2p listening on");
+                listen_addrs.push(address.clone());
+                let addrs_str = listen_addrs
+                    .iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                tracing::info!(
+                    %address,
+                    "libp2p listening on; provider registry metadata: PROVIDER_P2P_ADDRS={}",
+                    addrs_str,
+                );
             }
             SwarmEvent::Behaviour(event) => {
                 tracing::debug!(?event, "libp2p behaviour event");

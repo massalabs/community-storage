@@ -18,5 +18,5 @@ console.log('Sender:', account.address.toString());
 const amount = Mas.fromString(REWARDS_AMOUNT_MAS);
 const op = await provider.transfer(CONTRACT_ADDRESS, amount);
 
-console.log('Transfer operation sent. Op id:', op.operationId);
+console.log('Transfer operation sent. Op id:', op.id);
 console.log('Wait for finalization on buildnet, then check contract balance.');

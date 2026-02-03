@@ -1,0 +1,123 @@
+import 'dotenv/config';
+import {
+  Account,
+  Args,
+  ArrayTypes,
+  JsonRpcProvider,
+  Operation,
+  SmartContract,
+} from '@massalabs/massa-web3';
+
+/**
+ * Register a new storage provider in the Storage Registry contract
+ * and publish its metadata (HTTP endpoint + P2P multiaddrs).
+ *
+ * Required env variables:
+ * - STORAGE_REGISTRY_ADDRESS: address of the deployed storage-registry contract
+ * - PROVIDER_ENDPOINT: HTTP base URL of the running storage server (e.g. "http://127.0.0.1:4343")
+ *
+ * Optional:
+ * - PROVIDER_P2P_ADDRS: comma-separated libp2p multiaddrs
+ *
+ * ALLOCATED_GB is retrieved from the running server via GET {PROVIDER_ENDPOINT}/config
+ * (storage_limit_gb). The server must be reachable when running this script.
+ *
+ * The Massa address used is the one loaded from Account.fromEnv()
+ * (MASSA_PRIVATE_KEY / WALLET env as configured for massa-web3).
+ */
+
+const CONTRACT_ADDRESS =
+  process.env.STORAGE_REGISTRY_ADDRESS ||
+  'AS122kZ1ShKtZFJx8DDEp1BUQjUDCTaDBDwr27tGLYF5DmGzyyBAE';
+
+const ENDPOINT = process.env.PROVIDER_ENDPOINT || '';
+if (!ENDPOINT) {
+  console.error('PROVIDER_ENDPOINT is required (e.g. http://127.0.0.1:4343)');
+  process.exit(1);
+}
+
+const P2P_ADDRS: string[] = (process.env.PROVIDER_P2P_ADDRS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0);
+
+// Retrieve storage_limit_gb from the running provider's GET /config
+const configUrl = `${ENDPOINT.replace(/\/$/, '')}/config`;
+console.log('Fetching provider config from', configUrl);
+const configRes = await fetch(configUrl);
+if (!configRes.ok) {
+  console.error(
+    'Failed to fetch provider config:',
+    configRes.status,
+    await configRes.text(),
+  );
+  process.exit(1);
+}
+const config = (await configRes.json()) as {
+  storage_limit_gb: number;
+  storage_limit_bytes: number;
+  storage_used_bytes: number;
+};
+const ALLOCATED_GB = BigInt(config.storage_limit_gb);
+if (ALLOCATED_GB <= 0n) {
+  console.error('Provider reported storage_limit_gb <= 0:', config.storage_limit_gb);
+  process.exit(1);
+}
+
+const account = await Account.fromEnv();
+const provider = JsonRpcProvider.buildnet(account);
+const contract = new SmartContract(provider, CONTRACT_ADDRESS);
+
+console.log('Registering storage provider...');
+console.log('Registry contract:', CONTRACT_ADDRESS);
+console.log('Provider address:', account.address.toString());
+console.log('Allocated GB (from provider /config):', ALLOCATED_GB.toString());
+console.log('Endpoint:', ENDPOINT);
+console.log('P2P addrs:', P2P_ADDRS.length ? P2P_ADDRS : '(none)');
+
+// 1. Register or update: if node already registered, update allocation; otherwise register.
+const myAddress = account.address.toString();
+let nodeExists = false;
+try {
+  await contract.read('getNodeInfo', new Args().addString(myAddress));
+  nodeExists = true;
+} catch {
+  // Node not found — will register below
+}
+
+let operation: Operation;
+if (nodeExists) {
+  const updateArgs = new Args().addU64(ALLOCATED_GB);
+  operation = await contract.call('updateStorageAllocation', updateArgs);
+  console.log(
+    'updateStorageAllocation call sent (node already registered). Operation id:',
+    operation.id,
+  );
+} else {
+  const registerArgs = new Args().addU64(ALLOCATED_GB);
+  operation = await contract.call('registerStorageNode', registerArgs);
+  console.log(
+    'registerStorageNode call sent. Operation id:',
+    operation.id,
+  );
+}
+
+await operation.waitFinalExecution();
+console.log('Operation finalized:', operation.id);
+
+// 2. Update provider metadata (endpoint + P2P addresses)
+{
+  const metaArgs = new Args().addString(ENDPOINT).addArray(P2P_ADDRS, ArrayTypes.STRING);
+
+  const op = await contract.call('updateProviderMetadata', metaArgs);
+
+  console.log(
+    'updateProviderMetadata call sent. Operation id:',
+    op.id,
+  );
+  await op.waitFinalExecution();
+  console.log('Operation finalized:', op.id);
+}
+
+console.log('\n--- Provider registration script complete ---');
+

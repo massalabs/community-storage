@@ -27,12 +27,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config = Config::from_env();
     std::fs::create_dir_all(&config.storage_path)?;
-    let storage = Storage::new(config.storage_path.clone());
+    let storage_limit_bytes = config.storage_limit_gb.saturating_mul(1024 * 1024 * 1024);
+    let storage = Storage::new(config.storage_path.clone(), storage_limit_bytes);
 
-    if let Some(addr) = &config.massa_address {
-        tracing::info!(massa_address = %addr, "storage server Massa address configured");
-    } else {
-        tracing::warn!("MASSA_ADDRESS not set; storage provider identity is unknown");
+    tracing::info!(
+        storage_limit_gb = config.storage_limit_gb,
+        "storage size limit configured"
+    );
+
+    // Log metadata required to register this provider in the storage registry (register-provider.ts / .env).
+    let provider_endpoint = format!("http://{}", config.bind_address);
+    tracing::info!(
+        "provider registry metadata (for register-provider.ts): MASSA_ADDRESS={} PROVIDER_ENDPOINT={} PROVIDER_P2P_ADDRS=(see P2P logs when listening)",
+        config.massa_address.as_deref().unwrap_or("(set MASSA_ADDRESS)"),
+        provider_endpoint,
+    );
+    if config.massa_address.is_none() {
+        tracing::warn!("MASSA_ADDRESS not set; set it to register this provider in the registry");
     }
 
     // Always start libp2p node in the background.

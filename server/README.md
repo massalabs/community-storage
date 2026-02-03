@@ -10,8 +10,9 @@ cargo build --release
 ./target/release/massa-storage-server
 ```
 
-Optional environment variables:
+Environment variables:
 
+- `STORAGE_LIMIT_GB` — **required**. Max total storage in GB; uploads rejected with 507 when exceeded.
 - `STORAGE_PATH` — base directory for stored data (default: `./data`)
 - `BIND_ADDRESS` — listen address (default: `127.0.0.1:4343`)
 - `RUST_LOG` — log level (e.g. `info`, `debug`)
@@ -56,6 +57,11 @@ Example:
 curl "http://127.0.0.1:4343/data?namespace=blockchain"
 curl "http://127.0.0.1:4343/data/blockchain/block_123" -o block.bin
 ```
+
+### Config (storage limit and usage)
+
+- **GET /config**  
+  Returns JSON: `{ "storage_limit_gb", "storage_limit_bytes", "storage_used_bytes" }`. Available from the outside world to inspect the provider’s storage limit and current usage.
 
 ### Health
 

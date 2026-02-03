@@ -23,6 +23,8 @@ fn sanitize_segment(s: &str) -> String {
 #[derive(Clone)]
 pub struct Storage {
     base: PathBuf,
+    /// put() rejects uploads that would exceed this total size (bytes).
+    storage_limit_bytes: u64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -34,8 +36,36 @@ pub struct IndexEntry {
 }
 
 impl Storage {
-    pub fn new(base: PathBuf) -> Self {
-        Self { base }
+    pub fn new(base: PathBuf, storage_limit_bytes: u64) -> Self {
+        Self {
+            base,
+            storage_limit_bytes,
+        }
+    }
+
+    /// Storage limit in bytes (set from STORAGE_LIMIT_GB at startup).
+    pub fn storage_limit_bytes(&self) -> u64 {
+        self.storage_limit_bytes
+    }
+
+    /// Total size in bytes of all files under the storage base directory.
+    pub fn total_size(&self) -> io::Result<u64> {
+        fn dir_size(path: &Path) -> io::Result<u64> {
+            let mut total: u64 = 0;
+            if path.is_dir() {
+                for entry in fs::read_dir(path)? {
+                    let entry = entry?;
+                    let path = entry.path();
+                    if path.is_dir() {
+                        total += dir_size(&path)?;
+                    } else {
+                        total += entry.metadata()?.len();
+                    }
+                }
+            }
+            Ok(total)
+        }
+        dir_size(&self.base)
     }
 
     /// Ensure base and namespace dirs exist.
@@ -53,12 +83,24 @@ impl Storage {
     }
 
     /// Store raw bytes under namespace with optional id; returns the id used.
+    /// Returns an error if current usage + data would exceed the storage limit.
     pub fn put(
         &self,
         namespace: &str,
         id_hint: Option<&str>,
         data: &[u8],
     ) -> io::Result<String> {
+        let current = self.total_size()?;
+        let new_total = current.saturating_add(data.len() as u64);
+        if new_total > self.storage_limit_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "storage limit exceeded: current {} bytes, limit {} bytes, upload {} bytes",
+                    current, self.storage_limit_bytes, data.len()
+                ),
+            ));
+        }
         let ns_path = self.ensure_namespace(namespace)?;
         let id = id_hint
             .map(|s| sanitize_segment(s))
