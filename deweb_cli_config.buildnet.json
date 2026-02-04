@@ -1,0 +1,11 @@
+{
+  "node_url": "https://buildnet.massa.net/api/v2",
+  "chunk_size": 64000,
+  "metadatas": {
+    "TITLE": "Massa Community Storage",
+    "DESCRIPTION": "Décentralisé stockage communautaire sur Massa — hébergez des fichiers et fournissez du stockage.",
+    "KEYWORD1": "massa",
+    "KEYWORD2": "storage",
+    "KEYWORD3": "deweb"
+  }
+}
