@@ -1,8 +1,12 @@
+import massaStationPreset from '@massalabs/react-ui-kit/presets/massa-station-preset.js'
+
 /** @type {import('tailwindcss').Config} */
 export default {
+  presets: [massaStationPreset],
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    "./node_modules/@massalabs/react-ui-kit/src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {

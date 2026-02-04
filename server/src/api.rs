@@ -26,6 +26,8 @@ pub struct AppState {
     pub storage: Storage,
     /// When present, uploads require X-Massa-* headers and getIsStorageAdmin(addr) == true.
     pub upload_auth: Option<UploadAuthConfig>,
+    /// Discovered P2P listen addresses (filtered to exclude localhost).
+    pub p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>,
 }
 
 /// Query for list: optional namespace filter.
@@ -262,6 +264,9 @@ pub struct StorageConfigResponse {
     pub storage_limit_bytes: u64,
     /// Current total size of stored data in bytes.
     pub storage_used_bytes: u64,
+    /// P2P listen address (multiaddr) for provider metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub p2p_listen_addr: Option<String>,
 }
 
 /// GET /config — storage limit and current usage (available from the outside world).
@@ -271,30 +276,43 @@ pub async fn storage_config(
     let limit_bytes = state.storage.storage_limit_bytes();
     let storage_limit_gb = limit_bytes / (1024 * 1024 * 1024);
     match state.storage.total_size() {
-        Ok(used) => (
-            StatusCode::OK,
-            Json(StorageConfigResponse {
-                storage_limit_gb,
-                storage_limit_bytes: limit_bytes,
-                storage_used_bytes: used,
-            }),
-        )
-            .into_response(),
+        Ok(used) => {
+            // Get discovered P2P addresses (already filtered to exclude localhost)
+            let p2p_addrs = state.p2p_listen_addrs.read().unwrap();
+            let p2p_addr = if p2p_addrs.is_empty() {
+                None
+            } else {
+                // Return the first non-localhost address, or join all if multiple
+                Some(p2p_addrs.join(","))
+            };
+            
+            (
+                StatusCode::OK,
+                Json(StorageConfigResponse {
+                    storage_limit_gb,
+                    storage_limit_bytes: limit_bytes,
+                    storage_used_bytes: used,
+                    p2p_listen_addr: p2p_addr,
+                }),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to compute storage usage");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({ "error": e.to_string() })),
             )
-                .into_response()
+            .into_response()
         }
     }
 }
 
-pub fn router(storage: Storage, upload_auth: Option<UploadAuthConfig>) -> Router {
+pub fn router(storage: Storage, upload_auth: Option<UploadAuthConfig>, p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>) -> Router {
     let state = Arc::new(AppState {
         storage,
         upload_auth,
+        p2p_listen_addrs,
     });
     Router::new()
         .route("/health", get(health))

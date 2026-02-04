@@ -36,33 +36,15 @@ export async function uploadFileToProvider(baseUrl, file, storageId, signer = nu
       const bodyHash = blake3(bodyBytes)
       const hashHex = bytesToHex(bodyHash)
       const signResult = await signer.sign(hashHex)
-      const sigStr =
-        typeof signResult === 'string'
-          ? signResult
-          : signResult && typeof signResult.toString === 'function'
-            ? signResult.toString()
-            : (signResult?.signature ?? String(signResult))
-      // Clé publique : d'abord depuis le résultat de sign() (SignedData du wallet), sinon signer.publicKey
-      const pkFromResult =
-        signResult && typeof signResult === 'object' && signResult.publicKey != null
-          ? typeof signResult.publicKey === 'string'
-            ? signResult.publicKey
-            : typeof signResult.publicKey?.toString === 'function'
-              ? signResult.publicKey.toString()
-              : String(signResult.publicKey)
-          : ''
-      const pkRaw = pkFromResult || signer.publicKey
-      const pkStr =
-        pkRaw == null || pkRaw === ''
-          ? ''
-          : typeof pkRaw === 'string'
-            ? pkRaw
-            : typeof pkRaw?.toString === 'function'
-              ? pkRaw.toString()
-              : String(pkRaw)
-      headers['X-Massa-Address'] = typeof signer.address === 'string' ? signer.address.trim() : String(signer.address)
+      const sigStr = signResult?.signature 
+      const pkStr = signResult?.publicKey
+
+
+      const addressStr = typeof signer.address === 'string' ? signer.address.trim() : String(signer.address)
+      headers['X-Massa-Address'] = addressStr
       headers['X-Massa-Signature'] = sigStr
-      if (pkStr) headers['X-Massa-Public-Key'] = pkStr
+      headers['X-Massa-Public-Key'] = pkStr
+      
     }
     const res = await fetch(url.toString(), {
       method: 'POST',

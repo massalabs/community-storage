@@ -1,6 +1,7 @@
 //! Massa storage server — simple upload and read API with filesystem storage.
 //! See plan.md and server/README.md.
 
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 mod api;
@@ -40,13 +41,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Log metadata required to register this provider in the storage registry (register-provider.ts / .env).
     let provider_endpoint = format!("http://{}", config.bind_address);
     tracing::info!(
-        "provider registry metadata (for register-provider.ts): MASSA_ADDRESS={} PROVIDER_ENDPOINT={} PROVIDER_P2P_ADDRS=(see P2P logs when listening)",
+        "provider registry metadata (for register-provider.ts): MASSA_ADDRESS={} PROVIDER_ENDPOINT={}",
         config.massa_address.as_deref().unwrap_or("(set MASSA_ADDRESS)"),
         provider_endpoint,
     );
     if config.massa_address.is_none() {
         tracing::warn!("MASSA_ADDRESS not set; set it to register this provider in the registry");
     }
+
+    // Shared state for discovered P2P addresses (filtered to exclude localhost)
+    let p2p_discovered_addrs = Arc::new(std::sync::RwLock::new(Vec::new()));
 
     // Always start libp2p node in the background.
     // This will later handle chunk announce/request/challenge protocols
@@ -55,7 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         listen_addr = %config.p2p_listen_addr,
         "starting libp2p P2P subsystem"
     );
-    p2p::spawn(config.p2p_listen_addr.clone(), config.massa_address.clone());
+    p2p::spawn(
+        config.p2p_listen_addr.clone(),
+        config.massa_address.clone(),
+        p2p_discovered_addrs.clone(),
+    );
 
     // Upload authentication is mandatory: server refuses to start if
     // STORAGE_REGISTRY_ADDRESS or MASSA_JSON_RPC are missing (see Config::from_env).
@@ -69,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         massa_json_rpc: config.massa_json_rpc.clone(),
     });
 
-    let app = router(storage, upload_auth).layer(
+    let app = router(storage, upload_auth, p2p_discovered_addrs).layer(
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)

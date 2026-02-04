@@ -5,6 +5,7 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ThemeProvider } from './context/ThemeContext'
 import { WalletProvider } from './context/WalletContext'
+import { Toast } from '@massalabs/react-ui-kit'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -14,6 +15,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <ThemeProvider>
           <WalletProvider>
             <App />
+            <Toast />
           </WalletProvider>
         </ThemeProvider>
       </BrowserRouter>

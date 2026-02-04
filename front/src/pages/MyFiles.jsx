@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
+import { useHandleOperation } from '@massalabs/react-ui-kit'
+import { toast } from '@massalabs/react-ui-kit'
 import { getStoredFiles, extendStoredFiles, removeStoredFiles } from '../lib/myFilesStorage'
 import { getContractAddress } from '../contract/storageRegistryApi'
 import { downloadAndSaveFromProvider } from '../lib/downloadFromProvider'
@@ -141,12 +143,11 @@ const EXTEND_OPTIONS = [
 
 export function MyFiles() {
   const { connected, account, address } = useWallet()
+  const { handleOperation, isOpPending, isPending } = useHandleOperation()
   const [list, setList] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [extending, setExtending] = useState(false)
   const [extendMonths, setExtendMonths] = useState(1)
   const [extendConfirm, setExtendConfirm] = useState(null)
-  const [extendError, setExtendError] = useState(null)
   const [copiedEntryId, setCopiedEntryId] = useState(null)
 
   const load = useCallback(() => {
@@ -183,17 +184,14 @@ export function MyFiles() {
     const { totalNano, byProvider } = computeExtendPayment(entries, extendMonths)
     const needsPayment = totalNano > 0n && Object.keys(byProvider).length > 0
     if (needsPayment && connected && account) {
-      setExtendError(null)
       setExtendConfirm({ ids, months: extendMonths, totalNano, byProvider })
       return
     }
     if (needsPayment && !connected) {
-      setExtendError('Connectez votre wallet pour payer la prolongation.')
+      toast.error('Connectez votre wallet pour payer la prolongation.')
       return
     }
-    setExtending(true)
     if (address) extendStoredFiles(address, ids, extendMonths)
-    setExtending(false)
     setSelectedIds(new Set())
     load()
   }
@@ -221,44 +219,41 @@ export function MyFiles() {
     const { totalNano, byProvider } = computeExtendPayment(entries, months)
     const needsPayment = totalNano > 0n && Object.keys(byProvider).length > 0
     if (needsPayment && connected && account) {
-      setExtendError(null)
       setExtendConfirm({ ids: [id], months, totalNano, byProvider })
       return
     }
     if (needsPayment && !connected) {
-      setExtendError('Connectez votre wallet pour payer la prolongation.')
+      toast.error('Connectez votre wallet pour payer la prolongation.')
       return
     }
-    setExtending(true)
     if (address) extendStoredFiles(address, [id], months)
-    setExtending(false)
     load()
   }
 
   const handleExtendConfirm = useCallback(async () => {
     if (!extendConfirm || !account) return
     const { ids, months, totalNano } = extendConfirm
-    setExtending(true)
-    setExtendError(null)
     try {
       if (totalNano > 0n) {
         const contractAddress = getContractAddress()
-        await account.transfer(contractAddress, totalNano)
+        const operation = await account.transfer(contractAddress, totalNano)
+        await handleOperation(operation, {
+          pending: 'Paiement de la prolongation en cours...',
+          success: 'Prolongation payée avec succès!',
+          error: 'Erreur lors du paiement de la prolongation',
+        })
       }
       if (address) extendStoredFiles(address, ids, months)
       setExtendConfirm(null)
       setSelectedIds(new Set())
       load()
     } catch (e) {
-      setExtendError(e?.message ?? 'Paiement refusé ou échoué. Vérifiez votre solde.')
-    } finally {
-      setExtending(false)
+      toast.error(e?.message ?? 'Paiement refusé ou échoué. Vérifiez votre solde.')
     }
-  }, [extendConfirm, account, address, load])
+  }, [extendConfirm, account, address, load, handleOperation])
 
   const handleExtendCancel = useCallback(() => {
     setExtendConfirm(null)
-    setExtendError(null)
   }, [])
 
   const handleDeleteOne = (id) => {
@@ -283,22 +278,19 @@ export function MyFiles() {
         <p className="mt-2 text-accent font-mono font-semibold">
           Total : {(Number(extendConfirm.totalNano) / 1e9).toFixed(4)} MAS
         </p>
-        {extendError && (
-          <p className="mt-2 text-sm text-red-400">{extendError}</p>
-        )}
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={handleExtendConfirm}
-            disabled={extending}
+            disabled={isOpPending}
             className="font-mono text-xs uppercase tracking-wide text-amber-400 hover:text-amber-300 disabled:opacity-50 border border-amber-400/50 px-4 py-2 hover:border-amber-400"
           >
-            {extending ? 'Paiement…' : 'Payer et prolonger'}
+            {isPending ? 'Paiement…' : 'Payer et prolonger'}
           </button>
           <button
             type="button"
             onClick={handleExtendCancel}
-            disabled={extending}
+            disabled={isOpPending}
             className="font-mono text-xs uppercase tracking-wide border border-line px-4 py-2 text-zinc-400 hover:text-white hover:border-zinc-400 disabled:opacity-50"
           >
             Annuler
@@ -337,12 +329,6 @@ export function MyFiles() {
         </div>
       )}
 
-      {extendError && !extendConfirm && (
-        <div className="card-panel p-4 border-red-500/30 bg-red-500/5">
-          <p className="text-sm text-red-400">{extendError}</p>
-          <button type="button" onClick={() => setExtendError(null)} className="mt-2 text-xs text-zinc-500 hover:text-white">Fermer</button>
-        </div>
-      )}
       {list.length === 0 ? (
         <div className="card-panel p-12 text-center">
           <p className="text-zinc-500">Aucun fichier hébergé.</p>
@@ -367,10 +353,10 @@ export function MyFiles() {
               <button
                 type="button"
                 onClick={handleExtendSelected}
-                disabled={extending}
+                disabled={isOpPending}
                 className="rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50"
               >
-                {extending ? 'En cours…' : 'Prolonger la sélection'}
+                {isPending ? 'En cours…' : 'Prolonger la sélection'}
               </button>
               <button
                 type="button"
@@ -458,7 +444,7 @@ export function MyFiles() {
                         <button
                           type="button"
                           onClick={() => handleExtendOne(entry.id)}
-                          disabled={extending}
+                          disabled={isOpPending}
                           className="font-mono text-xs uppercase tracking-wide text-amber-400 hover:text-amber-300 disabled:opacity-50"
                           title="Prolonger l'hébergement de 1 mois"
                         >

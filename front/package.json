@@ -13,6 +13,7 @@
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.2.8",
     "@massalabs/massa-web3": "^5.2.1-dev",
+    "@massalabs/react-ui-kit": "^1.2.1-dev.20250923151245",
     "@massalabs/wallet-provider": "^3.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

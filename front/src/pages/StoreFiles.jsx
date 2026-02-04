@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useHandleOperation } from '@massalabs/react-ui-kit'
 import { useWallet } from '../context/WalletContext'
 import {
   getConfig,
@@ -13,6 +14,7 @@ import { addStoredFiles } from '../lib/myFilesStorage'
 import { checkProviderUp } from '../lib/providerHealth'
 import { uploadFileToProviders } from '../lib/uploadToProvider'
 import { getBlocklistSet } from '../lib/blocklistStorage'
+import { toast } from '@massalabs/react-ui-kit'
 
 function toNum(v) {
   return typeof v === 'bigint' ? Number(v) : v
@@ -49,6 +51,7 @@ const DURATION_OPTIONS = [
 export function StoreFiles() {
   const navigate = useNavigate()
   const { connected, account, address } = useWallet()
+  const { handleOperation, isOpPending, isPending } = useHandleOperation()
   const [config, setConfig] = useState(null)
   const [providers, setProviders] = useState([])
   const [loadingProviders, setLoadingProviders] = useState(true)
@@ -57,8 +60,6 @@ export function StoreFiles() {
   const [durationMonths, setDurationMonths] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [storing, setStoring] = useState(false)
-  const [storeError, setStoreError] = useState(null)
   const [providersError, setProvidersError] = useState(null)
   const [providerStatus, setProviderStatus] = useState({})
   const [copiedAddress, setCopiedAddress] = useState(null)
@@ -198,10 +199,9 @@ export function StoreFiles() {
   const handleConfirmStore = useCallback(async () => {
     if (!files.length || autoSelectedProviders.length < replicationCount) return
     if (!connected || !account || typeof account.transfer !== 'function') {
-      setStoreError('Connectez votre wallet pour payer les providers en MAS (buildnet).')
+      toast.error('Connectez votre wallet pour payer les providers en MAS (buildnet).')
       return
     }
-    setStoreError(null)
     const storageNano = BigInt(Math.ceil(priceNano))
     const totalToPay = uploaderBooking.bookingNano + storageNano
     if (totalToPay > 0n && account && typeof account.balance === 'function') {
@@ -209,15 +209,14 @@ export function StoreFiles() {
         const balance = await account.balance(true)
         if (balance != null && balance < totalToPay) {
           const needMas = (Number(totalToPay) / 1e9).toFixed(4)
-          setStoreError(`Solde insuffisant. Il vous faut au moins ${needMas} MAS (buildnet).`)
+          toast.error(`Solde insuffisant. Il vous faut au moins ${needMas} MAS (buildnet).`)
           return
         }
       } catch (e) {
-        setStoreError(e?.message ?? 'Impossible de vérifier le solde.')
+        toast.error(e?.message ?? 'Impossible de vérifier le solde.')
         return
       }
     }
-    setStoring(true)
     const now = new Date()
     const expires = new Date(now)
     expires.setMonth(expires.getMonth() + durationMonths)
@@ -229,14 +228,12 @@ export function StoreFiles() {
     if (uploaderBooking.needToBook > 0n) {
       try {
         if (typeof account.callSC !== 'function') {
-          setStoreError('Ce wallet ne supporte pas l\'enregistrement uploader (appel contrat avec paiement).')
-          setStoring(false)
+          toast.error('Ce wallet ne supporte pas l\'enregistrement uploader (appel contrat avec paiement).')
           return
         }
         await registerAsUploaderWithTransfer(account, uploaderBooking.needToBook)
       } catch (e) {
-        setStoreError(e?.message ?? 'Enregistrement uploader échoué. Vérifiez votre solde et réessayez.')
-        setStoring(false)
+        toast.error(e?.message ?? 'Enregistrement uploader échoué. Vérifiez votre solde et réessayez.')
         return
       }
     }
@@ -279,16 +276,15 @@ export function StoreFiles() {
       }
       const allFailed = uploadResults.every((r) => r.succeeded.length === 0)
       if (allFailed) {
-        setStoreError(
+        toast.error(
           'Aucun provider n\'a accepté le fichier. Aucun prélèvement. Vérifiez les URLs et que le serveur est joignable.'
         )
-        setStoring(false)
         return
       }
       uploadOk = true
       const anyFailed = uploadResults.some((r) => r.failed.length > 0)
       if (anyFailed) {
-        setStoreError(
+        toast.warning(
           'Certains providers n\'ont pas répondu ; les fichiers ont été envoyés où c\'était possible. Paiement pour les providers ayant répondu.'
         )
       }
@@ -298,28 +294,30 @@ export function StoreFiles() {
     if (uploadOk && storageNano > 0n && autoSelectedProviders.length > 0) {
       try {
         const contractAddress = getContractAddress()
-        await account.transfer(contractAddress, storageNano)
+        const operation = await account.transfer(contractAddress, storageNano)
+        await handleOperation(operation, {
+          pending: 'Paiement en cours...',
+          success: 'Paiement effectué avec succès!',
+          error: 'Erreur lors du paiement',
+        })
       } catch (e) {
-        setStoreError(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
-        setStoring(false)
+        toast.error(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
         return
       }
     }
 
     if (address) addStoredFiles(address, entries)
-    setStoring(false)
     setConfirmOpen(false)
-    setStoreError(null)
     clearAllFiles()
     navigate('/my-files')
-  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, address, clearAllFiles, navigate])
+  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, address, clearAllFiles, navigate, handleOperation])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 
   const hasFiles = files.length > 0
   const canStore =
     hasFiles &&
-    !storing &&
+    !isOpPending &&
     autoSelectedProviders.length >= replicationCount &&
     connected
 
@@ -560,11 +558,6 @@ export function StoreFiles() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
           <div className="card-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
             <h2 id="confirm-title" className="text-lg font-semibold text-white">Confirmer le stockage</h2>
-            {storeError && (
-              <div className="mt-4 border border-red-500/60 bg-red-500/10 p-3 text-sm text-red-400/90">
-                {storeError}
-              </div>
-            )}
             <div className="mt-4 space-y-3 text-sm">
               <p className="text-zinc-300"><strong>Fichiers :</strong> {files.length}</p>
               <ul className="scrollbar-app max-h-24 overflow-y-auto border border-line bg-white/5 p-2 text-zinc-500">
@@ -592,7 +585,7 @@ export function StoreFiles() {
             </div>
             <div className="mt-6 flex gap-3">
               <button type="button" onClick={() => setConfirmOpen(false)} className="flex-1 border border-line py-2 text-sm font-medium text-zinc-300 hover:bg-white/10">Annuler</button>
-              <button type="button" onClick={handleConfirmStore} disabled={storing} className="flex-1 border border-line bg-surface text-accent hover:border-accent py-2 text-sm font-semibold text-white hover:border-accent disabled:opacity-50">{storing ? 'En cours…' : 'Valider'}</button>
+              <button type="button" onClick={handleConfirmStore} disabled={isOpPending} className="flex-1 border border-line bg-surface text-accent hover:border-accent py-2 text-sm font-semibold text-white hover:border-accent disabled:opacity-50">{isPending ? 'En cours…' : 'Valider'}</button>
             </div>
           </div>
         </div>

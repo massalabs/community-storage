@@ -27,7 +27,6 @@ impl Config {
     /// - `STORAGE_PATH` (optional): base path for data (default: `./data`)
     /// - `BIND_ADDRESS` (optional): e.g. `127.0.0.1:4343`
     /// - `STORAGE_LIMIT_GB` (required): max total storage in GB; uploads rejected when exceeded
-    /// - `P2P_LISTEN_ADDR` (optional): libp2p multiaddr (default: `/ip4/0.0.0.0/tcp/0`)
     /// - `MASSA_ADDRESS` (optional): Massa address identifying this storage provider
     /// - `STORAGE_REGISTRY_ADDRESS` (required): SC address for getIsAllowedUploader / getIsStorageAdmin
     /// - `MASSA_JSON_RPC` (required): Massa JSON-RPC URL for read-only SC calls
@@ -40,8 +39,8 @@ impl Config {
             .expect("STORAGE_LIMIT_GB is required")
             .parse::<u64>()
             .expect("STORAGE_LIMIT_GB must be a positive integer");
-        let p2p_listen_addr = std::env::var("P2P_LISTEN_ADDR")
-            .unwrap_or_else(|_| "/ip4/0.0.0.0/tcp/0".to_string());
+        // P2P listen addr is not configurable via env; value is shown in logs when P2P starts.
+        let p2p_listen_addr = "/ip4/0.0.0.0/tcp/0".to_string();
         let massa_address = std::env::var("MASSA_ADDRESS").ok();
         let storage_registry_address = std::env::var("STORAGE_REGISTRY_ADDRESS")
             .expect("STORAGE_REGISTRY_ADDRESS is required for upload authentication");

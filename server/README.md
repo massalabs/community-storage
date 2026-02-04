@@ -16,7 +16,7 @@ Environment variables:
 - `STORAGE_PATH` — base directory for stored data (default: `./data`)
 - `BIND_ADDRESS` — listen address (default: `127.0.0.1:4343`)
 - `RUST_LOG` — log level (e.g. `info`, `debug`)
-- `P2P_LISTEN_ADDR` — libp2p listen multiaddr (default: `/ip4/0.0.0.0/tcp/0`)
+- P2P listen address is fixed (`/ip4/0.0.0.0/tcp/0`); the actual bound address is shown in logs when the P2P subsystem starts.
 - `MASSA_ADDRESS` — Massa address identifying this storage provider (used for logging/identity and future SC integration)
 - `STORAGE_REGISTRY_ADDRESS` — (optional) Storage registry contract address. With `MASSA_JSON_RPC`, enables upload auth.
 - `MASSA_JSON_RPC` — (optional) Massa JSON-RPC URL (e.g. `https://buildnet.massa.net/api/v2`). Required for upload auth.

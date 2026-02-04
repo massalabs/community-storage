@@ -10,6 +10,8 @@
 //! be extended with custom storage protocols (chunk announce / request /
 //! response, challenges, etc.).
 
+use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -20,13 +22,19 @@ use libp2p::{
     yamux, Multiaddr, SwarmBuilder,
 };
 
+/// Check if a multiaddr contains a localhost address (0.0.0.0 or 127.0.0.1).
+fn is_localhost_multiaddr(addr: &str) -> bool {
+    addr.contains("/ip4/0.0.0.0/") || addr.contains("/ip4/127.0.0.1/")
+}
+
 /// Spawn the libp2p node in a background task.
 ///
 /// - `listen_addr`: libp2p multiaddr to listen on (e.g. `/ip4/0.0.0.0/tcp/0`)
 /// - `massa_address`: optional Massa address identifying this storage provider
-pub fn spawn(listen_addr: String, massa_address: Option<String>) {
+/// - `discovered_addrs`: shared state to store discovered non-localhost addresses
+pub fn spawn(listen_addr: String, massa_address: Option<String>, discovered_addrs: Arc<RwLock<Vec<String>>>) {
     tokio::spawn(async move {
-        if let Err(e) = run(&listen_addr, massa_address.as_deref()).await {
+        if let Err(e) = run(&listen_addr, massa_address.as_deref(), discovered_addrs).await {
             tracing::error!(error = %e, "p2p task failed");
         }
     });
@@ -35,6 +43,7 @@ pub fn spawn(listen_addr: String, massa_address: Option<String>) {
 async fn run(
     listen_addr: &str,
     massa_address: Option<&str>,
+    discovered_addrs: Arc<RwLock<Vec<String>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Build a swarm following the official ping tutorial:
     // - new identity
@@ -74,6 +83,16 @@ async fn run(
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
                 listen_addrs.push(address.clone());
+                let addr_str = address.to_string();
+                
+                // Store non-localhost addresses in shared state for config endpoint
+                if !is_localhost_multiaddr(&addr_str) {
+                    let mut addrs = discovered_addrs.write().unwrap();
+                    if !addrs.contains(&addr_str) {
+                        addrs.push(addr_str.clone());
+                    }
+                }
+                
                 let addrs_str = listen_addrs
                     .iter()
                     .map(|a| a.to_string())
