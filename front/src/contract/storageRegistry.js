@@ -13,7 +13,7 @@ import {
 
 const CONTRACT_ADDRESS =
   import.meta.env.VITE_STORAGE_REGISTRY_ADDRESS ||
-  "AS1GCtj7QMCdcX6iCfKid41X8bDwprFenqSWEpPcxK4UiXdfcGHd";
+  "AS12rD3cTpMrQfKNxDSr2Ldf4nHMzjzkvhPT5zrGWdg3fE2PxJPL2";
 
 let provider = null;
 let contract = null;
@@ -202,6 +202,28 @@ export async function getBookedUploaderGb(address) {
     return out.nextU64();
   } catch (_) {
     return 0n;
+  }
+}
+
+/**
+ * Usage global du stockage (capacité totale, réservée, disponible).
+ * @returns {Promise<{ totalAllocatedGb: bigint, totalBookedGb: bigint, availableGb: bigint }>}
+ */
+export async function getGlobalStorageUsage() {
+  try {
+    const sc = getContract();
+    const res = await sc.read("getGlobalStorageUsageView", new Args());
+    if (res.info?.error || !res.value || res.value.length < 8) {
+      return { totalAllocatedGb: 0n, totalBookedGb: 0n, availableGb: 0n };
+    }
+    const out = new Args(res.value);
+    return {
+      totalAllocatedGb: out.nextU64(),
+      totalBookedGb: out.nextU64(),
+      availableGb: out.nextU64(),
+    };
+  } catch (_) {
+    return { totalAllocatedGb: 0n, totalBookedGb: 0n, availableGb: 0n };
   }
 }
 

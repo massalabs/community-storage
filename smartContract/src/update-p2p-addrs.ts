@@ -13,9 +13,11 @@ import {
  * Usage: PROVIDER_ENDPOINT=http://localhost:4343 WALLET_SECRET_KEY=... npx ts-node src/update-p2p-addrs.ts
  */
 
-const CONTRACT_ADDRESS =
-  process.env.STORAGE_REGISTRY_ADDRESS ||
-  'AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn';
+const CONTRACT_ADDRESS = process.env.STORAGE_REGISTRY_ADDRESS;
+if (!CONTRACT_ADDRESS) {
+  console.error('STORAGE_REGISTRY_ADDRESS is required');
+  process.exit(1);
+}
 
 const ENDPOINT = process.env.PROVIDER_ENDPOINT || '';
 if (!ENDPOINT) {
@@ -38,12 +40,19 @@ const peers = (await peersRes.json()) as {
 
 // Filter to only public addresses (exclude 127.0.0.1 and 172.x.x.x)
 const publicAddrs = peers.multiaddrs.filter((addr) => {
-  return !addr.includes('/ip4/127.') && !addr.includes('/ip4/172.') && !addr.includes('/ip4/10.');
+  return (
+    !addr.includes('/ip4/127.') &&
+    !addr.includes('/ip4/172.') &&
+    !addr.includes('/ip4/10.')
+  );
 });
 
 console.log('Server:', ENDPOINT);
 console.log('PeerID:', peers.local_peer_id);
-console.log('Public multiaddrs:', publicAddrs.length ? publicAddrs : '(none - using all)');
+console.log(
+  'Public multiaddrs:',
+  publicAddrs.length ? publicAddrs : '(none - using all)',
+);
 
 const addrsToRegister = publicAddrs.length > 0 ? publicAddrs : peers.multiaddrs;
 

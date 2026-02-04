@@ -26,9 +26,13 @@ import {
  * (MASSA_PRIVATE_KEY / WALLET env as configured for massa-web3).
  */
 
-const CONTRACT_ADDRESS =
-  process.env.STORAGE_REGISTRY_ADDRESS ||
-  'AS122kZ1ShKtZFJx8DDEp1BUQjUDCTaDBDwr27tGLYF5DmGzyyBAE';
+const CONTRACT_ADDRESS = process.env.STORAGE_REGISTRY_ADDRESS;
+if (!CONTRACT_ADDRESS || CONTRACT_ADDRESS.trim().length === 0) {
+  console.error(
+    'STORAGE_REGISTRY_ADDRESS is required. Set it in .env or the environment.',
+  );
+  process.exit(1);
+}
 
 const ENDPOINT = process.env.PROVIDER_ENDPOINT || '';
 if (!ENDPOINT) {

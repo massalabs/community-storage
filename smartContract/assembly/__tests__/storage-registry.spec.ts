@@ -576,9 +576,7 @@ describe('Storage Registry - File Upload Tracking', () => {
     const usageBytes = getUploaderUsageView(
       new Args().add(UPLOADER_ADDRESS).serialize(),
     );
-    expect(bytesToU64(usageBytes)).toBe(
-      file1Size + file2Size + file3Size,
-    );
+    expect(bytesToU64(usageBytes)).toBe(file1Size + file2Size + file3Size);
   });
 
   it('should allow recording uploads for storage admin uploaders', () => {
@@ -612,30 +610,21 @@ describe('Storage Registry - File Upload Tracking', () => {
       // Try to record as non-admin (should fail)
       switchUser(UPLOADER_ADDRESS);
       recordFileUpload(
-        new Args()
-          .add(UPLOADER_ADDRESS)
-          .add<u64>(1_000_000_000)
-          .serialize(),
+        new Args().add(UPLOADER_ADDRESS).add<u64>(1_000_000_000).serialize(),
       );
     },
   );
 
-  throws(
-    'should fail to record upload for non-allowed uploader',
-    () => {
-      const NOT_ALLOWED_ADDRESS =
-        'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3xx';
+  throws('should fail to record upload for non-allowed uploader', () => {
+    const NOT_ALLOWED_ADDRESS =
+      'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3xx';
 
-      // Try to record for address that is not storage admin and has no booking
-      switchUser(STORAGE_ADMIN_ADDRESS);
-      recordFileUpload(
-        new Args()
-          .add(NOT_ALLOWED_ADDRESS)
-          .add<u64>(1_000_000_000)
-          .serialize(),
-      );
-    },
-  );
+    // Try to record for address that is not storage admin and has no booking
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    recordFileUpload(
+      new Args().add(NOT_ALLOWED_ADDRESS).add<u64>(1_000_000_000).serialize(),
+    );
+  });
 
   throws('should fail to record upload with zero file size', () => {
     switchUser(UPLOADER_ADDRESS);
@@ -644,9 +633,52 @@ describe('Storage Registry - File Upload Tracking', () => {
     registerAsUploader(new Args().add<u64>(5).serialize());
 
     switchUser(STORAGE_ADMIN_ADDRESS);
-    recordFileUpload(
-      new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize(),
+    recordFileUpload(new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize());
+  });
+
+  it('should track file uploads for two different uploaders independently', () => {
+    const UPLOADER_A = UPLOADER_ADDRESS;
+    const UPLOADER_B = 'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3ab';
+
+    // User A books 3 GB
+    switchUser(UPLOADER_A);
+    mockBalance(UPLOADER_A, 10_000_000_000);
+    mockTransferredCoins(3 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(3).serialize());
+
+    // User B books 5 GB
+    switchUser(UPLOADER_B);
+    mockBalance(UPLOADER_B, 10_000_000_000);
+    mockTransferredCoins(5 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(5).serialize());
+
+    // Storage admin records uploads: user A uploads 100 MB + 400 MB; user B uploads 1 GB + 2 GB
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const fileA1: u64 = 100_000_000; // 100 MB
+    const fileA2: u64 = 400_000_000; // 400 MB
+    const fileB1: u64 = 1_000_000_000; // 1 GB
+    const fileB2: u64 = 2_000_000_000; // 2 GB
+
+    recordFileUpload(new Args().add(UPLOADER_A).add<u64>(fileA1).serialize());
+    recordFileUpload(new Args().add(UPLOADER_B).add<u64>(fileB1).serialize());
+    recordFileUpload(new Args().add(UPLOADER_A).add<u64>(fileA2).serialize());
+    recordFileUpload(new Args().add(UPLOADER_B).add<u64>(fileB2).serialize());
+
+    // Each uploader's usage is tracked independently
+    const usageA = getUploaderUsageView(new Args().add(UPLOADER_A).serialize());
+    const usageB = getUploaderUsageView(new Args().add(UPLOADER_B).serialize());
+    expect(bytesToU64(usageA)).toBe(fileA1 + fileA2); // 500 MB
+    expect(bytesToU64(usageB)).toBe(fileB1 + fileB2); // 3 GB
+
+    // Booked amounts unchanged
+    const bookedA = getBookedUploaderGbView(
+      new Args().add(UPLOADER_A).serialize(),
     );
+    const bookedB = getBookedUploaderGbView(
+      new Args().add(UPLOADER_B).serialize(),
+    );
+    expect(bytesToU64(bookedA)).toBe(3);
+    expect(bytesToU64(bookedB)).toBe(5);
   });
 
   it('should allow storage admin to remove file upload', () => {
@@ -760,8 +792,6 @@ describe('Storage Registry - File Upload Tracking', () => {
     registerAsUploader(new Args().add<u64>(5).serialize());
 
     switchUser(STORAGE_ADMIN_ADDRESS);
-    removeFileUpload(
-      new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize(),
-    );
+    removeFileUpload(new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize());
   });
 });

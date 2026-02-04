@@ -31,6 +31,7 @@ use tonic::transport::Channel;
 
 /// Chain ID for transaction signing
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum ChainId {
     Mainnet = 0,
     Buildnet = 77658366,
@@ -47,6 +48,7 @@ impl ChainId {
 // ============================================================================
 
 /// Generate a new random keypair
+#[allow(dead_code)]
 pub fn generate_keypair() -> KeyPair {
     KeyPair::generate(0).expect("Failed to generate keypair")
 }
@@ -68,6 +70,7 @@ pub fn address_from_private_key(private_key: &str) -> Result<String> {
 }
 
 /// Parse an address string and validate it
+#[allow(dead_code)]
 pub fn parse_address(address: &str) -> Result<Address> {
     Address::from_str(address).context("Invalid Massa address")
 }
@@ -202,11 +205,13 @@ impl GrpcClient {
     }
 
     /// Get the address associated with this client's keypair
+    #[allow(dead_code)]
     pub fn get_address(&self) -> String {
         address_from_keypair(&self.keypair)
     }
 
     /// Get MAS balance for an address
+    #[allow(dead_code)]
     pub async fn get_balance(&mut self, address: &str) -> Result<f64> {
         let request = tonic::Request::new(QueryStateRequest {
             queries: vec![ExecutionQueryRequestItem {
@@ -249,6 +254,7 @@ impl GrpcClient {
     }
 
     /// Read a value from contract datastore
+    #[allow(dead_code)]
     pub async fn read_datastore(&mut self, address: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let request = GetDatastoreEntriesRequest {
             filters: vec![massa_proto_rs::massa::api::v1::GetDatastoreEntryFilter {
@@ -281,6 +287,7 @@ impl GrpcClient {
     }
 
     /// Get network status (version, current period, etc.)
+    #[allow(dead_code)]
     pub async fn get_status(&mut self) -> Result<NetworkStatus> {
         let response = self
             .client
@@ -307,6 +314,7 @@ impl GrpcClient {
 
 /// Network status information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NetworkStatus {
     pub version: String,
     pub current_period: u64,

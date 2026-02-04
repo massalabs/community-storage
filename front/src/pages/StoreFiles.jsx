@@ -5,9 +5,9 @@ import { useWallet } from '../context/WalletContext'
 import {
   getConfig,
   getStorageProviders,
-  getContractAddress,
   getBookedUploaderGb,
   getUploaderPricePerGb,
+  getGlobalStorageUsage,
   registerAsUploaderWithTransfer,
 } from '../contract/storageRegistryApi'
 import { addStoredFiles } from '../lib/myFilesStorage'
@@ -63,8 +63,10 @@ export function StoreFiles() {
   const [providersError, setProvidersError] = useState(null)
   const [providerStatus, setProviderStatus] = useState({})
   const [copiedAddress, setCopiedAddress] = useState(null)
-  /** Coût d'enregistrement uploader si nécessaire (needToBook en GB, bookingNano en nanoMAS) */
-  const [uploaderBooking, setUploaderBooking] = useState({ needToBook: 0n, bookingNano: 0n })
+  /** Coût d'enregistrement uploader si nécessaire (needToBook en GB, bookingNano en nanoMAS, bookedGb actuel) */
+  const [uploaderBooking, setUploaderBooking] = useState({ needToBook: 0n, bookingNano: 0n, bookedGb: 0n })
+  /** Loader pendant la transaction + envoi des fichiers */
+  const [isTransactionProcessing, setIsTransactionProcessing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -93,7 +95,7 @@ export function StoreFiles() {
   // Quand la modal de confirmation s'ouvre : calcul du coût d'enregistrement uploader (paiement upfront pour le montant total)
   useEffect(() => {
     if (!confirmOpen || !address || !files.length) {
-      setUploaderBooking({ needToBook: 0n, bookingNano: 0n })
+      setUploaderBooking({ needToBook: 0n, bookingNano: 0n, bookedGb: 0n })
       return
     }
     let cancelled = false
@@ -106,10 +108,10 @@ export function StoreFiles() {
         // we update their storage size to the new amount (pays for full amount).
         const needToBook = needBookingGb > bookedGb ? needBookingGb : 0n
         const bookingNano = needToBook * pricePerGb
-        setUploaderBooking({ needToBook, bookingNano })
+        setUploaderBooking({ needToBook, bookingNano, bookedGb })
       })
       .catch(() => {
-        if (!cancelled) setUploaderBooking({ needToBook: 0n, bookingNano: 0n })
+        if (!cancelled) setUploaderBooking({ needToBook: 0n, bookingNano: 0n, bookedGb: 0n })
       })
     return () => { cancelled = true }
   }, [confirmOpen, address, files])
@@ -156,14 +158,6 @@ export function StoreFiles() {
   }, [eligibleProviders, replicationCount])
 
   const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0)
-  const totalGb = totalBytes / 1e9
-  // Tarif fixe pour l’estimation : 1 MAS / mois pour ~2 Mo (500e9 nanoMAS/GB/mois)
-  const REWARD_PER_GB_PER_MONTH = 500000000000
-  const effectiveGb = files.length > 0 && totalGb > 0 ? totalGb : (files.length > 0 ? 2 / 1024 : 0)
-  const priceNano = effectiveGb > 0
-    ? Math.ceil(effectiveGb * replicationCount * durationMonths * REWARD_PER_GB_PER_MONTH)
-    : 0
-  const priceMas = priceNano / 1e9
 
   const handleDrop = useCallback((e) => {
     e.preventDefault()
@@ -200,26 +194,23 @@ export function StoreFiles() {
 
   const handleConfirmStore = useCallback(async () => {
     if (!files.length || autoSelectedProviders.length < replicationCount) return
-    if (!connected || !account || typeof account.transfer !== 'function') {
-      toast.error('Connectez votre wallet pour payer les providers en MAS (buildnet).')
+    if (!connected || !account) {
+      toast.error('Connectez votre wallet pour réserver du stockage et envoyer les fichiers.')
       return
     }
-    const storageNano = BigInt(Math.ceil(priceNano))
-    const totalToPay = uploaderBooking.bookingNano + storageNano
-    if (totalToPay > 0n && account && typeof account.balance === 'function') {
-      try {
+    setIsTransactionProcessing(true)
+    try {
+      // Only payment is uploader registration/booking when needed (no separate MAS transfer)
+      const totalToPay = uploaderBooking.bookingNano
+      if (totalToPay > 0n && account && typeof account.balance === 'function') {
         const balance = await account.balance(true)
         if (balance != null && balance < totalToPay) {
           const needMas = (Number(totalToPay) / 1e9).toFixed(4)
-          toast.error(`Solde insuffisant. Il vous faut au moins ${needMas} MAS (buildnet).`)
+          toast.error(`Solde insuffisant. Il vous faut au moins ${needMas} MAS pour la réservation (buildnet).`)
           return
         }
-      } catch (e) {
-        toast.error(e?.message ?? 'Impossible de vérifier le solde.')
-        return
       }
-    }
-    const now = new Date()
+      const now = new Date()
     const expires = new Date(now)
     expires.setMonth(expires.getMonth() + durationMonths)
     const providerEndpoints = autoSelectedProviders
@@ -232,6 +223,22 @@ export function StoreFiles() {
       try {
         if (typeof account.callSC !== 'function') {
           toast.error('Ce wallet ne supporte pas l\'enregistrement uploader (appel contrat avec paiement).')
+          return
+        }
+        // Check capacity: account for user's existing booking (will be freed when updating)
+        const { availableGb, totalAllocatedGb, totalBookedGb } = await getGlobalStorageUsage()
+        // If user is already registered, their existing booking will be replaced,
+        // so effective available capacity = availableGb + their current bookedGb
+        const effectiveAvailableGb = uploaderBooking.bookedGb > 0n
+          ? availableGb + uploaderBooking.bookedGb
+          : availableGb
+        // Contract checks: totalAllocatedGb >= (totalBookedGb - existingGb + newAmountGb)
+        // So we need: newAmountGb <= totalAllocatedGb - totalBookedGb + existingGb
+        // Which is: newAmountGb <= availableGb + existingGb = effectiveAvailableGb
+        if (uploaderBooking.needToBook > effectiveAvailableGb) {
+          toast.error(
+            `Pas assez de capacité sur le réseau : vous devez réserver ${uploaderBooking.needToBook} GB mais seulement ${effectiveAvailableGb} GB est disponible (capacité totale ${totalAllocatedGb} GB, déjà réservée ${totalBookedGb} GB${uploaderBooking.bookedGb > 0n ? `, votre réservation actuelle ${uploaderBooking.bookedGb} GB sera remplacée` : ''}). Réduisez le nombre de fichiers ou attendez que plus de providers s'enregistrent.`
+          )
           return
         }
         // Enregistre/met à jour pour le montant total nécessaire (paiement upfront)
@@ -289,32 +296,19 @@ export function StoreFiles() {
       const anyFailed = uploadResults.some((r) => r.failed.length > 0)
       if (anyFailed) {
         toast.warning(
-          'Certains providers n\'ont pas répondu ; les fichiers ont été envoyés où c\'était possible. Paiement pour les providers ayant répondu.'
+          'Certains providers n\'ont pas répondu ; les fichiers ont été envoyés où c\'était possible.'
         )
       }
     }
 
-    // 2. Paiement stockage au smart contract (l'enregistrement uploader a déjà été fait en étape 0)
-    if (uploadOk && storageNano > 0n && autoSelectedProviders.length > 0) {
-      try {
-        const contractAddress = getContractAddress()
-        const operation = await account.transfer(contractAddress, storageNano)
-        await handleOperation(operation, {
-          pending: 'Paiement en cours...',
-          success: 'Paiement effectué avec succès!',
-          error: 'Erreur lors du paiement',
-        })
-      } catch (e) {
-        toast.error(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
-        return
-      }
+      if (address) addStoredFiles(address, entries)
+      setConfirmOpen(false)
+      clearAllFiles()
+      navigate('/my-files')
+    } finally {
+      setIsTransactionProcessing(false)
     }
-
-    if (address) addStoredFiles(address, entries)
-    setConfirmOpen(false)
-    clearAllFiles()
-    navigate('/my-files')
-  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, address, clearAllFiles, navigate, handleOperation])
+  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, uploaderBooking, connected, account, address, clearAllFiles, navigate])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 
@@ -401,12 +395,9 @@ export function StoreFiles() {
               </div>
 
               <div className="card-panel p-4">
-                <p className="text-sm text-zinc-500">Prix estimé</p>
-                <p className="text-2xl font-bold text-accent">
-                  {priceMas.toFixed(4)} MAS
-                </p>
+                <p className="text-sm text-zinc-500">Coût</p>
                 <p className="text-xs text-zinc-500 mt-1">
-                  {formatBytes(totalBytes || 0)} × {replicationCount} répl. × {durationMonths} mois (1 MAS / mois pour ~2 Mo)
+                  Réservation de capacité (payée au contrat à l&apos;enregistrement uploader si nécessaire). Aucun transfert MAS séparé.
                 </p>
               </div>
               <div>
@@ -421,7 +412,7 @@ export function StoreFiles() {
                 </p>
               )}
               {!connected && (
-                <p className="text-sm text-amber-400/90">Connectez votre wallet (buildnet) pour payer en MAS et storer.</p>
+                <p className="text-sm text-amber-400/90">Connectez votre wallet (buildnet) pour réserver du stockage et storer.</p>
               )}
               <button type="button" onClick={() => setConfirmOpen(true)} disabled={!canStore} className="w-full border border-line bg-surface text-accent hover:border-accent py-3 text-sm font-semibold text-white hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed">Storer</button>
             </div>
@@ -560,7 +551,14 @@ export function StoreFiles() {
       {/* Modal confirmation */}
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-          <div className="card-panel w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="card-panel w-full max-w-md p-6 relative" onClick={(e) => e.stopPropagation()}>
+            {isTransactionProcessing && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-zinc-900/95 backdrop-blur-sm" aria-busy="true">
+                <span className="h-10 w-10 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden />
+                <p className="mt-4 font-mono text-sm font-medium text-zinc-300">Transaction en cours…</p>
+                <p className="mt-1 text-xs text-zinc-500">Confirmez dans votre wallet puis attendez l&apos;envoi des fichiers.</p>
+              </div>
+            )}
             <h2 id="confirm-title" className="text-lg font-semibold text-white">Confirmer le stockage</h2>
             <div className="mt-4 space-y-3 text-sm">
               <p className="text-zinc-300"><strong>Fichiers :</strong> {files.length}</p>
@@ -578,18 +576,29 @@ export function StoreFiles() {
                 ))}
               </ul>
               <p className="border-t border-line pt-3 text-accent font-semibold">
-                Total : {((Number(uploaderBooking.bookingNano) + priceNano) / 1e9).toFixed(4)} MAS
+                Total : {(Number(uploaderBooking.bookingNano) / 1e9).toFixed(4)} MAS
               </p>
-              {(uploaderBooking.bookingNano > 0n || priceNano > 0) && (
+              {(uploaderBooking.bookingNano > 0n || uploaderBooking.needToBook === 0n) && (
                 <p className="text-xs text-zinc-500">
-                  {uploaderBooking.bookingNano > 0n ? 'Inclut l\'enregistrement uploader (réservation capacité). ' : ''}
-                  Envoyé au smart contract (buildnet) ; les fichiers sont signés et uploadés vers les providers.
+                  {uploaderBooking.bookingNano > 0n
+                    ? 'Paiement au contrat pour la réservation de capacité (enregistrement uploader). '
+                    : 'Aucun paiement : vous avez déjà assez de capacité réservée. '}
+                  Les fichiers sont signés et envoyés aux providers.
                 </p>
               )}
             </div>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={() => setConfirmOpen(false)} className="flex-1 border border-line py-2 text-sm font-medium text-zinc-300 hover:bg-white/10">Annuler</button>
-              <button type="button" onClick={handleConfirmStore} disabled={isOpPending} className="flex-1 border border-line bg-surface text-accent hover:border-accent py-2 text-sm font-semibold text-white hover:border-accent disabled:opacity-50">{isPending ? 'En cours…' : 'Valider'}</button>
+              <button type="button" onClick={() => setConfirmOpen(false)} disabled={isTransactionProcessing} className="flex-1 border border-line py-2 text-sm font-medium text-zinc-300 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed">Annuler</button>
+              <button type="button" onClick={handleConfirmStore} disabled={isOpPending || isTransactionProcessing} className="flex-1 flex items-center justify-center gap-2 border border-line bg-surface text-accent hover:border-accent py-2 text-sm font-semibold text-white hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed">
+                {(isPending || isTransactionProcessing) ? (
+                  <>
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
+                    En cours…
+                  </>
+                ) : (
+                  'Valider'
+                )}
+              </button>
             </div>
           </div>
         </div>

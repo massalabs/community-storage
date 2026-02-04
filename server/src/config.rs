@@ -13,9 +13,9 @@ pub struct Config {
     pub storage_limit_gb: u64,
     /// libp2p listen address (multiaddr), e.g. `/ip4/0.0.0.0/tcp/0`.
     pub p2p_listen_addr: String,
-    /// Optional Massa address identifying this storage provider.
-    pub massa_address: Option<String>,
-    /// Storage registry smart contract address (for upload auth: getIsAllowedUploader).
+    /// Massa address (derived from PRIVATE_KEY).
+    pub massa_address: String,
+    /// Storage registry smart contract address (required). Used for upload auth, provider list, and contract writes.
     pub storage_registry_address: String,
     /// Massa JSON-RPC URL (e.g. https://buildnet.massa.net/api/v2). Required for upload auth.
     pub massa_json_rpc: String,
@@ -23,12 +23,10 @@ pub struct Config {
     pub bootstrap_peers: Vec<String>,
     /// Massa gRPC URL for write operations (e.g. `grpc://buildnet.massa.net:33037`).
     pub massa_grpc_url: Option<String>,
-    /// Storage registry contract address.
-    pub contract_address: String,
-    /// Private key for signing transactions (optional, needed for P2P address registration).
-    pub private_key: Option<String>,
-    /// Public HTTP endpoint for this provider (registered in contract for other peers).
-    pub public_endpoint: Option<String>,
+    /// Private key for signing transactions (required).
+    pub private_key: String,
+    /// Public HTTP endpoint for this provider (registered in contract). Defaults to http://BIND_ADDRESS when unset.
+    pub public_endpoint: String,
 }
 
 impl Config {
@@ -36,8 +34,8 @@ impl Config {
     /// - `STORAGE_PATH` (optional): base path for data (default: `./data`)
     /// - `BIND_ADDRESS` (optional): e.g. `127.0.0.1:4343`
     /// - `STORAGE_LIMIT_GB` (required): max total storage in GB; uploads rejected when exceeded
-    /// - `MASSA_ADDRESS` (optional): Massa address identifying this storage provider
-    /// - `STORAGE_REGISTRY_ADDRESS` (required): SC address for getIsAllowedUploader / getIsStorageAdmin
+    /// - `PRIVATE_KEY` (required): Massa private key (S12...); address is derived from it
+    /// - `STORAGE_REGISTRY_ADDRESS` (required): storage registry contract address; server will not start if missing
     /// - `MASSA_JSON_RPC` (required): Massa JSON-RPC URL for read-only SC calls
     pub fn from_env() -> Self {
         let storage_path = std::env::var("STORAGE_PATH")
@@ -51,19 +49,20 @@ impl Config {
             .expect("STORAGE_LIMIT_GB must be a positive integer");
         // P2P listen addr is not configurable via env; value is shown in logs when P2P starts.
         let p2p_listen_addr = "/ip4/0.0.0.0/tcp/0".to_string();
-        let massa_address = std::env::var("MASSA_ADDRESS").ok();
+        let private_key = std::env::var("PRIVATE_KEY")
+            .expect("PRIVATE_KEY is required (Massa private key, e.g. S12...)");
+        let massa_address = crate::massa_grpc::address_from_private_key(&private_key)
+            .expect("PRIVATE_KEY is invalid (could not derive address)");
         let storage_registry_address = std::env::var("STORAGE_REGISTRY_ADDRESS")
-            .expect("STORAGE_REGISTRY_ADDRESS is required for upload authentication");
+            .expect("STORAGE_REGISTRY_ADDRESS is required (storage registry contract address); server will not start without it");
         let massa_json_rpc = std::env::var("MASSA_JSON_RPC")
             .expect("MASSA_JSON_RPC is required for upload authentication");
         let bootstrap_peers = std::env::var("BOOTSTRAP_PEERS")
             .map(|s| s.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
             .unwrap_or_default();
         let massa_grpc_url = std::env::var("MASSA_GRPC_URL").ok();
-        let contract_address = std::env::var("CONTRACT_ADDRESS")
-            .unwrap_or_else(|_| "AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn".to_string());
-        let private_key = std::env::var("PRIVATE_KEY").ok();
-        let public_endpoint = std::env::var("PUBLIC_ENDPOINT").ok();
+        let public_endpoint = std::env::var("PUBLIC_ENDPOINT")
+            .unwrap_or_else(|_| format!("http://{}", bind_address));
 
         Self {
             storage_path,
@@ -75,7 +74,6 @@ impl Config {
             massa_json_rpc,
             bootstrap_peers,
             massa_grpc_url,
-            contract_address,
             private_key,
             public_endpoint,
         }

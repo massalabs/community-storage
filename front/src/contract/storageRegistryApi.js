@@ -56,6 +56,11 @@ export async function getBookedUploaderGb(address) {
   return real.getBookedUploaderGb(address)
 }
 
+/** Usage global du stockage (capacité totale, réservée, disponible). */
+export async function getGlobalStorageUsage() {
+  return real.getGlobalStorageUsage()
+}
+
 /** Prix nanoMAS par GB pour réserver en tant qu'uploader. */
 export async function getUploaderPricePerGb() {
   return real.getUploaderPricePerGb()

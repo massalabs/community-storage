@@ -25,10 +25,13 @@ const ENV_PATH = path.join(__dirname, '..', '.env');
 
 dotenv.config({ path: ENV_PATH });
 
+const contractAddress = process.env.STORAGE_REGISTRY_ADDRESS;
+if (!contractAddress) {
+  console.error('STORAGE_REGISTRY_ADDRESS is required in .env');
+  process.exit(1);
+}
 const config = {
-  contract:
-    process.env.STORAGE_REGISTRY_ADDRESS ||
-    'AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn',
+  contract: contractAddress,
   numProviders: parseInt(process.env.NUM_PROVIDERS || '3', 10),
   storageGb: BigInt(process.env.STORAGE_LIMIT_GB || '1'),
   fundAmount: Mas.fromString('5'),

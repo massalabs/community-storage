@@ -11,6 +11,7 @@ use axum::{
 use std::sync::Arc;
 
 use crate::auth::verify_upload_signature;
+use crate::contract::MassaClient;
 use crate::sc_client::get_is_allowed_uploader;
 use crate::storage::{Storage, MIN_REPLICATION_MAX, MIN_REPLICATION_MIN};
 
@@ -25,11 +26,13 @@ use crate::p2p::SharedP2pState;
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Storage,
-    /// When present, uploads require X-Massa-* headers and getIsStorageAdmin(addr) == true.
+    /// When present, uploads require X-Massa-* headers and getIsAllowedUploader(addr).
     pub upload_auth: Option<UploadAuthConfig>,
     /// Discovered P2P listen addresses (filtered to exclude localhost).
     pub p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>,
     pub p2p_state: Option<SharedP2pState>,
+    /// Massa client for contract writes (recordFileUpload). Present when gRPC is configured.
+    pub massa_client: Option<Arc<MassaClient>>,
 }
 
 /// Query for list: optional namespace filter.
@@ -159,10 +162,31 @@ pub async fn upload(
 
     match state
         .storage
-        .put(&namespace, id_hint, &body, min_replication, uploader_address)
+        .put(&namespace, id_hint, &body, min_replication, uploader_address.clone())
     {
         Ok(id) => {
             tracing::info!(namespace, id, size = body.len(), min_replication, "upload stored");
+
+            // Update total storage usage on the contract when we have an uploader and gRPC client
+            if let (Some(ref uploader), Some(ref client)) =
+                (uploader_address.as_ref(), state.massa_client.as_ref())
+            {
+                let size = body.len() as u64;
+                if size > 0 {
+                    if let Err(e) = client
+                        .record_file_upload(uploader, size)
+                        .await
+                    {
+                        tracing::warn!(
+                            error = %e,
+                            uploader = %uploader,
+                            size = size,
+                            "failed to record file upload on contract (file was stored)"
+                        );
+                    }
+                }
+            }
+
             (
                 StatusCode::CREATED,
                 Json(serde_json::json!({
@@ -351,12 +375,14 @@ pub fn router(
     upload_auth: Option<UploadAuthConfig>,
     p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>,
     p2p_state: Option<SharedP2pState>,
+    massa_client: Option<Arc<MassaClient>>,
 ) -> Router {
     let state = Arc::new(AppState {
         storage,
         upload_auth,
         p2p_listen_addrs,
         p2p_state,
+        massa_client,
     });
     Router::new()
         .route("/health", get(health))

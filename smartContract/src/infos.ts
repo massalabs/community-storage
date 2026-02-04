@@ -17,15 +17,19 @@ import {
  * - Global storage usage statistics
  *
  * Env variables:
- * - STORAGE_REGISTRY_ADDRESS: address of the deployed storage-registry contract (optional)
- * - PROVIDER_ADDRESSES: comma-separated list of provider addresses (fallback if the
- *   contract does not expose getRegisteredAddressesView())
+ * - STORAGE_REGISTRY_ADDRESS: address of the deployed storage-registry contract (required)
+ * - PROVIDER_ADDRESSES: comma-separated list of provider addresses (optional; used if you
+ *   want to inspect specific addresses instead of the contract's getRegisteredAddressesView())
  * - UPLOADER_ADDRESSES: comma-separated list of uploader addresses to inspect
  */
 
-const CONTRACT_ADDRESS =
-  process.env.STORAGE_REGISTRY_ADDRESS ||
-  'AS122kZ1ShKtZFJx8DDEp1BUQjUDCTaDBDwr27tGLYF5DmGzyyBAE';
+const CONTRACT_ADDRESS = process.env.STORAGE_REGISTRY_ADDRESS;
+if (!CONTRACT_ADDRESS || CONTRACT_ADDRESS.trim().length === 0) {
+  console.error(
+    'STORAGE_REGISTRY_ADDRESS is required. Set it in .env or the environment.',
+  );
+  process.exit(1);
+}
 
 const PROVIDER_ADDRESSES_ENV = (process.env.PROVIDER_ADDRESSES || '')
   .split(',')

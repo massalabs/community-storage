@@ -54,6 +54,8 @@ struct ReadOnlyResult {
 struct ReadOnlyResultInner {
     #[serde(rename = "Ok")]
     ok: Option<Vec<u8>>,
+    #[serde(rename = "Error")]
+    error: Option<String>,
 }
 
 impl MassaClient {
@@ -120,6 +122,103 @@ impl MassaClient {
             .and_then(|r| r.result.as_ref())
             .and_then(|r| r.ok.clone())
             .ok_or_else(|| anyhow!("No result data"))
+    }
+
+    /// Call a read-only function; returns None when the contract execution fails (e.g. "Node not found").
+    async fn read_only_call_optional(&self, function: &str, args: &[u8]) -> Result<Option<Vec<u8>>> {
+        let params = serde_json::json!([[{
+            "target_address": self.contract_address,
+            "target_function": function,
+            "parameter": args.iter().map(|b| *b as i32).collect::<Vec<_>>(),
+            "max_gas": 1_000_000_000u64,
+        }]]);
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "execute_read_only_call",
+            params,
+        };
+
+        let resp: JsonRpcResponse = self
+            .http
+            .post(&self.rpc_url)
+            .json(&req)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        if let Some(err) = resp.error {
+            return Err(anyhow!("RPC error: {:?}", err));
+        }
+
+        let result = resp.result.ok_or_else(|| anyhow!("No result"))?;
+        let parsed: Vec<ReadOnlyResult> = serde_json::from_value(result)?;
+
+        let inner = parsed.first().and_then(|r| r.result.as_ref());
+        Ok(inner.and_then(|r| {
+            if r.error.is_some() {
+                None
+            } else {
+                r.ok.clone()
+            }
+        }))
+    }
+
+    /// Returns true if the address is already registered as a storage node.
+    pub async fn is_node_registered(&self, address: &str) -> Result<bool> {
+        let mut request = Args::new();
+        request.add_string(address);
+        match self
+            .read_only_call_optional("getNodeInfo", &request.into_bytes())
+            .await?
+        {
+            Some(data) => Ok(!data.is_empty()),
+            None => Ok(false),
+        }
+    }
+
+    /// Register this address as a storage node (allocated GB, endpoint, P2P addrs).
+    /// Call only when gRPC is configured and the node is not yet registered.
+    pub async fn register_storage_node(
+        &self,
+        allocated_gb: u64,
+        endpoint: &str,
+        p2p_addrs: &[String],
+    ) -> Result<String> {
+        let grpc = self
+            .grpc_client
+            .as_ref()
+            .ok_or_else(|| anyhow!("gRPC client not configured (cannot register storage node)"))?;
+
+        let mut args = Args::new();
+        args.add_u64(allocated_gb);
+        args.add_string(endpoint);
+        args.add_string_array(p2p_addrs);
+
+        let mut client = grpc.lock().await;
+        let op_id = client
+            .call_sc(
+                &self.contract_address,
+                "registerStorageNode",
+                args.into_bytes(),
+                "0.01",
+                10_000_000,
+                Amount::from_raw(0),
+            )
+            .await
+            .map_err(|e| anyhow!("Failed to call registerStorageNode: {}", e))?;
+
+        tracing::info!(
+            operation_id = %op_id,
+            allocated_gb,
+            endpoint = %endpoint,
+            p2p_addrs_count = p2p_addrs.len(),
+            "storage node registration sent"
+        );
+
+        Ok(op_id)
     }
 
     /// Get all registered provider addresses
@@ -211,6 +310,49 @@ impl MassaClient {
             endpoint = %endpoint,
             p2p_addrs_count = p2p_addrs.len(),
             "provider metadata update sent"
+        );
+
+        Ok(op_id)
+    }
+
+    /// Record a file upload in the storage registry (updates total storage usage per uploader).
+    /// Callable only when the server is a storage admin on the contract. Requires gRPC client.
+    pub async fn record_file_upload(
+        &self,
+        uploader_address: &str,
+        file_size_bytes: u64,
+    ) -> Result<String> {
+        let grpc = self
+            .grpc_client
+            .as_ref()
+            .ok_or_else(|| anyhow!("gRPC client not configured (cannot record file upload)"))?;
+
+        if file_size_bytes == 0 {
+            return Ok(String::new());
+        }
+
+        let mut args = Args::new();
+        args.add_string(uploader_address);
+        args.add_u64(file_size_bytes);
+
+        let mut client = grpc.lock().await;
+        let op_id = client
+            .call_sc(
+                &self.contract_address,
+                "recordFileUpload",
+                args.into_bytes(),
+                "0.01",
+                10_000_000,
+                Amount::from_raw(0),
+            )
+            .await
+            .map_err(|e| anyhow!("Failed to call recordFileUpload: {}", e))?;
+
+        tracing::info!(
+            operation_id = %op_id,
+            uploader = %uploader_address,
+            size_bytes = file_size_bytes,
+            "file upload recorded on contract"
         );
 
         Ok(op_id)

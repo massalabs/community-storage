@@ -20,8 +20,7 @@ cd - > /dev/null
 # Load env vars from smartContract/.env
 set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
 
-# Default contract address if not set
-STORAGE_REGISTRY_ADDRESS="${STORAGE_REGISTRY_ADDRESS:-AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn}"
+# STORAGE_REGISTRY_ADDRESS must be set (e.g. in smartContract/.env); server will not start without it
 
 # 2. Generate individual .env files for each container (keeps private keys out of docker-compose.yml)
 echo ""
@@ -30,7 +29,6 @@ echo "[2/4] Generating environment files..."
 mkdir -p "$ENV_DIR"
 
 for i in $(seq 1 $NUM); do
-  ADDR_VAR="PROVIDER_${i}_ADDRESS"
   SECRET_VAR="PROVIDER_${i}_PRIVATE_KEY"
   PUBLIC_PORT=$((4342+i))
 

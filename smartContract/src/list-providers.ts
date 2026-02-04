@@ -17,9 +17,11 @@ import {
  * Otherwise set PROVIDER_ADDRESSES (comma-separated) to list specific addresses.
  */
 
-const CONTRACT_ADDRESS =
-  process.env.STORAGE_REGISTRY_ADDRESS ||
-  'AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn';
+const CONTRACT_ADDRESS = process.env.STORAGE_REGISTRY_ADDRESS;
+if (!CONTRACT_ADDRESS) {
+  console.error('STORAGE_REGISTRY_ADDRESS is required');
+  process.exit(1);
+}
 
 const PROVIDER_ADDRESSES_ENV = (process.env.PROVIDER_ADDRESSES || '')
   .split(',')

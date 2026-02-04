@@ -70,6 +70,7 @@ impl Args {
     }
 
     /// Append a `u64` value (little-endian).
+    #[allow(dead_code)]
     pub fn add_u64(&mut self, value: u64) -> &mut Self {
         self.data.extend_from_slice(&value.to_le_bytes());
         self
@@ -84,6 +85,7 @@ impl Args {
     }
 
     /// Append a length-prefixed byte slice.
+    #[allow(dead_code)]
     pub fn add_bytes(&mut self, value: &[u8]) -> &mut Self {
         self.add_u32(value.len() as u32);
         self.data.extend_from_slice(value);
@@ -120,6 +122,7 @@ impl Args {
     }
 
     /// Read the next `u64` value.
+    #[allow(dead_code)]
     pub fn next_u64(&mut self) -> Result<u64, ArgsError> {
         if self.offset + 8 > self.data.len() {
             return Err(ArgsError::OutOfRange("u64"));

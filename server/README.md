@@ -17,9 +17,13 @@ Environment variables:
 - `BIND_ADDRESS` — listen address (default: `127.0.0.1:4343`)
 - `RUST_LOG` — log level (e.g. `info`, `debug`)
 - P2P listen address is fixed (`/ip4/0.0.0.0/tcp/0`); the actual bound address is shown in logs when the P2P subsystem starts.
-- `MASSA_ADDRESS` — Massa address identifying this storage provider (used for logging/identity and future SC integration)
-- `STORAGE_REGISTRY_ADDRESS` — (optional) Storage registry contract address. With `MASSA_JSON_RPC`, enables upload auth.
-- `MASSA_JSON_RPC` — (optional) Massa JSON-RPC URL (e.g. `https://buildnet.massa.net/api/v2`). Required for upload auth.
+- `PRIVATE_KEY` — **required**. Massa private key (S12…); the provider address is derived from it.
+- `STORAGE_REGISTRY_ADDRESS` — **required**. Storage registry contract address; server will not start if missing. Used for upload auth, provider list, and contract writes.
+- `MASSA_JSON_RPC` — (required for upload auth) Massa JSON-RPC URL (e.g. `https://buildnet.massa.net/api/v2`).
+
+**Provider registration:** With **`MASSA_GRPC_URL`** set (e.g. `grpc://buildnet.massa.net:33037`), the server **registers itself** as a storage node on startup. It checks whether its address (derived from `PRIVATE_KEY`) is already registered; if not, it calls `registerStorageNode(allocatedGb, endpoint, p2pAddrs)` using `STORAGE_LIMIT_GB`, the public endpoint, and the P2P multiaddrs discovered at runtime. If already registered, it only calls `updateProviderMetadata` to refresh the endpoint and P2P addresses. The endpoint advertised is `PUBLIC_ENDPOINT` if set, otherwise `http://BIND_ADDRESS`. No separate `register-provider` step is required. See `.env.example` for `BOOTSTRAP_PEERS`.
+
+**Storage usage on contract:** After each successful upload, the server calls `recordFileUpload(uploader, size_bytes)` on the storage registry so total usage per uploader is tracked. This requires the server’s address (derived from `PRIVATE_KEY`) to be a **storage admin** on the contract (e.g. contract admin calls `addStorageAdmin(server_address)`).
 
 When both `STORAGE_REGISTRY_ADDRESS` and `MASSA_JSON_RPC` are set, **POST /upload** requires auth (mode wallet uniquement) : le client envoie hex(Blake3(body)) au wallet pour signature, puis envoie `X-Massa-Address`, `X-Massa-Signature`, `X-Massa-Public-Key`. Le serveur vérifie la signature (Blake3(utf8(hex(Blake3(body)))) + Ed25519) et `getIsAllowedUploader(address)` sur le contrat ; seuls les uploaders enregistrés peuvent uploader. Utiliser le script `upload-file` avec `PRIVATE_KEY` ou `WALLET`, ou l’app front avec Bearby/Massa Station.
 

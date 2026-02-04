@@ -75,7 +75,7 @@ fn is_localhost_multiaddr(addr: &str) -> bool {
 /// Spawn the libp2p node in a background task.
 pub fn spawn(
     listen_addr: String,
-    massa_address: Option<String>,
+    massa_address: String,
     peers_to_dial: Vec<String>,
     discovered_addrs: Arc<StdRwLock<Vec<String>>>,
 ) -> SharedP2pState {
@@ -94,7 +94,7 @@ pub fn spawn(
     tokio::spawn(async move {
         if let Err(e) = run(
             &listen_addr,
-            massa_address.as_deref(),
+            &massa_address,
             peers_to_dial,
             keypair,
             state_clone,
@@ -112,7 +112,7 @@ pub fn spawn(
 
 async fn run(
     listen_addr: &str,
-    massa_address: Option<&str>,
+    massa_address: &str,
     peers_to_dial: Vec<String>,
     keypair: libp2p::identity::Keypair,
     state: SharedP2pState,
@@ -143,7 +143,7 @@ async fn run(
 
     tracing::info!(
         %local_peer_id,
-        massa_address = massa_address.unwrap_or("unknown"),
+        massa_address = %massa_address,
         "starting libp2p node"
     );
 

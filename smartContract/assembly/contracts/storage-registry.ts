@@ -289,13 +289,25 @@ function getTotalAllocatedGbAcrossProviders(): u64 {
 
 /**
  * Get total storage capacity (in GB) already booked by all uploaders.
+ * Counts each unique address once (index may have contained duplicates historically).
  */
 function getTotalBookedGbAcrossUploaders(): u64 {
   const uploaders = getUploaderIndex();
   let total: u64 = 0;
 
   for (let i = 0; i < uploaders.length; i++) {
-    total += getBookedUploaderGb(uploaders[i]);
+    const addr = uploaders[i];
+    // Only count each address once (first occurrence)
+    let isFirst = true;
+    for (let j = 0; j < i; j++) {
+      if (uploaders[j] == addr) {
+        isFirst = false;
+        break;
+      }
+    }
+    if (isFirst) {
+      total += getBookedUploaderGb(addr);
+    }
   }
 
   return total;
@@ -899,23 +911,31 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
     ? totalBookedGb - existingGb + amountGb
     : totalBookedGb + amountGb;
 
+  const availableGb =
+    totalAllocatedGb > totalBookedGb ? totalAllocatedGb - totalBookedGb : 0;
   assert(
     totalAllocatedGb >= newTotalBookedGb,
-    'Insufficient storage capacity: need ' +
-      newTotalBookedGb.toString() +
+    'Insufficient storage capacity: you are trying to book ' +
+      amountGb.toString() +
       ' GB but only ' +
+      availableGb.toString() +
+      ' GB is free (total capacity ' +
       totalAllocatedGb.toString() +
-      ' GB available from providers',
+      ' GB, already booked ' +
+      totalBookedGb.toString() +
+      ' GB). Wait for more providers or reduce the amount.',
   );
 
   // Set storage size to the new amount (update if already registered)
   setBookedUploaderGb(caller, amountGb);
 
-  // Add to index if not already present
+  // Add to index if not already present (avoid ever writing duplicates)
   if (!isInIndex) {
     uploaderIndex.push(caller);
     setUploaderIndex(uploaderIndex);
   }
+  // Note: getTotalBookedGbAcrossUploaders counts each address only once, so
+  // any existing duplicates in storage do not inflate the total.
 
   generateEvent(
     'UPLOADER_BOOKED:' +
@@ -936,7 +956,10 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
  */
 export function recordFileUpload(binaryArgs: StaticArray<u8>): void {
   assertNotPaused();
-  assert(isStorageAdmin(Context.caller().toString()), 'Caller is not a storage admin');
+  assert(
+    isStorageAdmin(Context.caller().toString()),
+    'Caller is not a storage admin',
+  );
 
   const args = new Args(binaryArgs);
   const uploaderAddress = args
@@ -978,7 +1001,10 @@ export function recordFileUpload(binaryArgs: StaticArray<u8>): void {
  */
 export function removeFileUpload(binaryArgs: StaticArray<u8>): void {
   assertNotPaused();
-  assert(isStorageAdmin(Context.caller().toString()), 'Caller is not a storage admin');
+  assert(
+    isStorageAdmin(Context.caller().toString()),
+    'Caller is not a storage admin',
+  );
 
   const args = new Args(binaryArgs);
   const uploaderAddress = args
@@ -993,7 +1019,8 @@ export function removeFileUpload(binaryArgs: StaticArray<u8>): void {
   // Update total usage for this uploader
   const currentUsage = getUploaderUsage(uploaderAddress);
   // Prevent underflow
-  const newUsage = currentUsage > fileSizeBytes ? currentUsage - fileSizeBytes : 0;
+  const newUsage =
+    currentUsage > fileSizeBytes ? currentUsage - fileSizeBytes : 0;
   setUploaderUsage(uploaderAddress, newUsage);
 
   generateEvent(
