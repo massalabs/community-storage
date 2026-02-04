@@ -222,7 +222,7 @@ export function Layout({ children }) {
             <p className="mt-2 text-xs text-zinc-500">
               Plusieurs comptes trouvés. Sélectionnez celui à utiliser.
             </p>
-            <ul className="mt-6 space-y-2">
+            <ul className="scrollbar-app mt-6 max-h-[60vh] space-y-2 overflow-y-auto pr-2">
               {availableAccounts.map((acc, i) => (
                 <li key={acc?.address ?? i}>
                   <button
