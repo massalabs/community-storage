@@ -49,6 +49,19 @@ function deployContract(): void {
   constructor(constructorArgs);
 }
 
+/** Build args for registerStorageNode: allocatedGb, endpoint, p2pAddrs (all required by contract). */
+function registerNodeArgs(
+  allocatedGb: u64,
+  endpoint: string = '',
+  p2pAddrs: Array<string> = [],
+): StaticArray<u8> {
+  return new Args()
+    .add<u64>(allocatedGb)
+    .add(endpoint)
+    .add<Array<string>>(p2pAddrs)
+    .serialize();
+}
+
 describe('Storage Registry - Constructor', () => {
   beforeEach(() => {
     deployContract();
@@ -69,9 +82,9 @@ describe('Storage Registry - Provider Metadata', () => {
   beforeEach(() => {
     deployContract();
 
-    // Register a node
+    // Register a node (endpoint/p2pAddrs optional, can be empty)
     switchUser(NODE_ADDRESS);
-    registerStorageNode(new Args().add<u64>(10).serialize());
+    registerStorageNode(registerNodeArgs(10));
   });
 
   it('should allow a registered node to update and read its metadata', () => {
@@ -132,8 +145,7 @@ describe('Storage Registry - Node Registration (No Staking)', () => {
     switchUser(NODE_ADDRESS);
     // No need to mock transferred coins - no staking required
 
-    const args = new Args().add<u64>(10).serialize();
-    registerStorageNode(args);
+    registerStorageNode(registerNodeArgs(10));
 
     // Verify node info
     const nodeInfoArgs = new Args().add(NODE_ADDRESS).serialize();
@@ -147,7 +159,7 @@ describe('Storage Registry - Node Registration (No Staking)', () => {
 
   it('getRegisteredAddressesView returns registered node address', () => {
     switchUser(NODE_ADDRESS);
-    registerStorageNode(new Args().add<u64>(10).serialize());
+    registerStorageNode(registerNodeArgs(10));
 
     const viewBytes = getRegisteredAddressesView(new StaticArray<u8>(0));
     const viewArgs = new Args(viewBytes);
@@ -159,20 +171,18 @@ describe('Storage Registry - Node Registration (No Staking)', () => {
   throws('should fail with allocation below minimum', () => {
     switchUser(NODE_ADDRESS);
 
-    const args = new Args().add<u64>(0).serialize(); // 0 GB - below minimum of 1
-    registerStorageNode(args);
+    registerStorageNode(registerNodeArgs(0)); // 0 GB - below minimum of 1
   });
 
   throws('should fail with allocation above maximum', () => {
     switchUser(NODE_ADDRESS);
 
-    const args = new Args().add<u64>(2000).serialize(); // Above max 1000
-    registerStorageNode(args);
+    registerStorageNode(registerNodeArgs(2000)); // Above max 1000
   });
 
   it('should allow node to unregister', () => {
     switchUser(NODE_ADDRESS);
-    registerStorageNode(new Args().add<u64>(10).serialize());
+    registerStorageNode(registerNodeArgs(10));
 
     unregisterStorageNode(new StaticArray<u8>(0));
 
@@ -255,7 +265,7 @@ describe('Storage Registry - Challenge System', () => {
 
     // Register a node (no staking needed)
     switchUser(NODE_ADDRESS);
-    registerStorageNode(new Args().add<u64>(10).serialize());
+    registerStorageNode(registerNodeArgs(10));
   });
 
   it('should allow challenger to issue challenge', () => {
@@ -333,7 +343,7 @@ describe('Storage Registry - Reward Distribution', () => {
 
     // Register a node
     switchUser(NODE_ADDRESS);
-    registerStorageNode(new Args().add<u64>(10).serialize());
+    registerStorageNode(registerNodeArgs(10));
   });
 
   it('should distribute rewards only to nodes that passed challenge', () => {
@@ -379,7 +389,7 @@ describe('Storage Registry - Reward Distribution', () => {
       // Register a second node but do NOT challenge it
       const NODE2 = 'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
       switchUser(NODE2);
-      registerStorageNode(new Args().add<u64>(5).serialize());
+      registerStorageNode(registerNodeArgs(5));
 
       // Challenge only the first node and pass
       switchUser(CHALLENGER_ADDRESS);
@@ -436,6 +446,9 @@ describe('Storage Registry - Uploader booking', () => {
 
   beforeEach(() => {
     deployContract();
+    // Register a storage node so there is capacity to book
+    switchUser(NODE_ADDRESS);
+    registerStorageNode(registerNodeArgs(100));
   });
 
   it('should return default price per GB', () => {

@@ -361,10 +361,14 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   const allocatedGb = args
     .nextU64()
     .expect('allocatedGb argument is missing or invalid');
-  
+
   // Metadata: endpoint and P2P addresses (required but can be empty strings/arrays)
-  const endpoint = args.nextString().expect('endpoint argument is missing or invalid');
-  const p2pAddrs = args.nextStringArray().expect('p2pAddrs argument is missing or invalid');
+  const endpoint = args
+    .nextString()
+    .expect('endpoint argument is missing or invalid');
+  const p2pAddrs = args
+    .nextStringArray()
+    .expect('p2pAddrs argument is missing or invalid');
 
   const caller = Context.caller().toString();
   const config = getConfig();
@@ -411,9 +415,14 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   if (endpoint.length > 0 || p2pAddrs.length > 0) {
     const stored = new Args().add(endpoint).add<Array<string>>(p2pAddrs);
     Storage.set(stringToBytes(providerMetadataKey(caller)), stored.serialize());
-    
+
     generateEvent(
-      'STORAGE_NODE_REGISTERED:' + caller + ',' + allocatedGb.toString() + ',METADATA:' + endpoint,
+      'STORAGE_NODE_REGISTERED:' +
+        caller +
+        ',' +
+        allocatedGb.toString() +
+        ',METADATA:' +
+        endpoint,
     );
   } else {
     generateEvent(
@@ -839,8 +848,30 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
       ' per GB',
   );
 
+  // Check if there's enough storage capacity provided by storage nodes
+  const totalAllocatedGb = getTotalAllocatedGbAcrossProviders();
+  const totalBookedGb = getTotalBookedGbAcrossUploaders();
   const caller = Context.caller().toString();
   const existingGb = getBookedUploaderGb(caller);
+  const uploaderIndex = getUploaderIndex();
+  const isInIndex = uploaderIndex.includes(caller);
+
+  // Calculate new total booked GB:
+  // - If caller is already in index: totalBookedGb includes existingGb, so add amountGb
+  // - If caller is not in index: totalBookedGb doesn't include them, so add existingGb + amountGb
+  const newTotalBookedGb = isInIndex
+    ? totalBookedGb + amountGb
+    : totalBookedGb + existingGb + amountGb;
+
+  assert(
+    totalAllocatedGb >= newTotalBookedGb,
+    'Insufficient storage capacity: need ' +
+      newTotalBookedGb.toString() +
+      ' GB but only ' +
+      totalAllocatedGb.toString() +
+      ' GB available from providers',
+  );
+
   const newTotalGb = existingGb + amountGb;
   setBookedUploaderGb(caller, newTotalGb);
 
