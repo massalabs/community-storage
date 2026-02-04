@@ -163,7 +163,10 @@ async function runSetup(): Promise<void> {
         console.log(`Provider ${p.index}: Registering...`);
         const op = await contract.call(
           'registerStorageNode',
-          new Args().addU64(config.storageGb),
+          new Args()
+            .addU64(config.storageGb)
+            .addString(endpoint)
+            .addArray([], ArrayTypes.STRING),
         );
         await op.waitSpeculativeExecution();
       }

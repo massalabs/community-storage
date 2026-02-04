@@ -15,8 +15,8 @@ RUN rm -rf src
 COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
-# Stage 2: Runtime
-FROM debian:bookworm-slim
+# Stage 2: Runtime (needs GLIBC 2.38+ to match rust:latest builder)
+FROM debian:sid-slim
 
 # Install runtime dependencies for libp2p (OpenSSL, CA certs) and curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
