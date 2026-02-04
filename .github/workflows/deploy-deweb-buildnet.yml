@@ -42,6 +42,9 @@ jobs:
           source_folder: ./front/dist
         env:
           MASSA_DEWEB_SECRET_KEY: ${{ secrets.MASSA_DEWEB_SECRET_KEY }}
+          # Le CLI DeWeb lit SECRET_KEY (et NODE_URL si présent) ; l'action peut ne pas les transmettre.
+          SECRET_KEY: ${{ secrets.MASSA_DEWEB_BUILDNET_SECRET_KEY }}
+          NODE_URL: https://buildnet.massa.net/api/v2
 
       - name: URL
         run: echo "Main deployed → ${{ steps.deploy.outputs.deployed-website }}"
