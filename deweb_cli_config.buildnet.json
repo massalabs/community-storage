@@ -1,4 +1,5 @@
 {
+  "address": "AS1SdHU75YALMpnAt7vQuJHKq3Qf8yPrdjY14PWLzZuUdmdXDvdX",
   "node_url": "https://buildnet.massa.net/api/v2",
   "chunk_size": 64000,
   "metadatas": {
