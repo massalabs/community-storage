@@ -46,6 +46,7 @@ const STORAGE_ADMIN_PREFIX = 'storage_admin_';
 const UPLOADER_BOOKING_PREFIX = 'uploader_booking_';
 const UPLOADER_INDEX_KEY = 'uploader_index';
 const UPLOADER_PRICE_PER_GB_KEY = 'uploader_price_per_gb';
+const UPLOADER_USAGE_PREFIX = 'uploader_usage_';
 const ADMIN_KEY = 'admin';
 const CONFIG_KEY = 'config';
 const TOTAL_NODES_KEY = 'total_nodes';
@@ -154,6 +155,39 @@ function setUploaderIndex(addresses: Array<string>): void {
   );
 }
 
+function uploaderUsageKey(address: string): string {
+  return UPLOADER_USAGE_PREFIX + address;
+}
+
+/**
+ * Get total storage usage (in bytes) for an uploader.
+ * @param address - Uploader address
+ * @returns Total bytes used by this uploader
+ */
+function getUploaderUsage(address: string): u64 {
+  const key = stringToBytes(uploaderUsageKey(address));
+  if (!Storage.has(key)) {
+    return 0;
+  }
+  return bytesToU64(Storage.get(key));
+}
+
+/**
+ * Set total storage usage (in bytes) for an uploader.
+ * @param address - Uploader address
+ * @param bytes - Total bytes used
+ */
+function setUploaderUsage(address: string, bytes: u64): void {
+  if (bytes === 0) {
+    const key = stringToBytes(uploaderUsageKey(address));
+    if (Storage.has(key)) {
+      Storage.del(key);
+    }
+    return;
+  }
+  Storage.set(stringToBytes(uploaderUsageKey(address)), u64ToBytes(bytes));
+}
+
 function getConfig(): StorageConfig {
   const config = new StorageConfig();
   if (Storage.has(stringToBytes(CONFIG_KEY))) {
@@ -244,10 +278,10 @@ function getTotalAllocatedGbAcrossProviders(): u64 {
 
   for (let i = 0; i < addresses.length; i++) {
     const node = getNode(addresses[i]);
-    if (node === null || !node!.active) {
+    if (node === null || !node.active) {
       continue;
     }
-    total += node!.allocatedGb;
+    total += node.allocatedGb;
   }
 
   return total;
@@ -618,7 +652,7 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
   const node = getNode(challenge!.nodeAddress);
   if (node !== null) {
     if (proofValid) {
-      node!.passedChallenges += 1;
+      node.passedChallenges += 1;
       generateEvent('CHALLENGE_PASSED:' + challengeId + ',' + caller);
     } else {
       // No slashing - just mark as failed
@@ -626,7 +660,7 @@ export function submitProof(binaryArgs: StaticArray<u8>): void {
         'CHALLENGE_FAILED:' + challengeId + ',' + caller + ',invalid_proof',
       );
     }
-    setNode(node!);
+    setNode(node);
   }
 
   // Update period stats
@@ -697,11 +731,11 @@ export function distributeRewards(binaryArgs: StaticArray<u8>): void {
   // Require all providers to have been challenged before distributing rewards
   for (let i = 0; i < nodeAddresses.length; i++) {
     const node = getNode(nodeAddresses[i]);
-    if (node === null || !node!.active) {
+    if (node === null || !node.active) {
       continue; // Skip inactive/unregistered
     }
     assert(
-      node!.lastChallengedPeriod == period,
+      node.lastChallengedPeriod == period,
       'All providers must be challenged for this period before distributing rewards',
     );
   }
@@ -712,12 +746,12 @@ export function distributeRewards(binaryArgs: StaticArray<u8>): void {
 
   for (let i = 0; i < nodeAddresses.length; i++) {
     const node = getNode(nodeAddresses[i]);
-    if (node === null || !node!.active) {
+    if (node === null || !node.active) {
       continue;
     }
 
     // Only reward nodes that passed all their challenges for this period
-    if (node!.passedChallenges != node!.totalChallenges) {
+    if (node.passedChallenges != node.totalChallenges) {
       generateEvent(
         'REWARD_SKIPPED:' + nodeAddresses[i] + ',challenge_not_passed',
       );
@@ -725,12 +759,12 @@ export function distributeRewards(binaryArgs: StaticArray<u8>): void {
     }
 
     // Calculate reward: allocatedGb × rewardPerGbPerPeriod
-    const reward = node!.allocatedGb * config.rewardPerGbPerPeriod;
+    const reward = node.allocatedGb * config.rewardPerGbPerPeriod;
 
     if (reward > 0) {
-      node!.pendingRewards += reward;
-      node!.lastRewardedPeriod = period;
-      setNode(node!);
+      node.pendingRewards += reward;
+      node.lastRewardedPeriod = period;
+      setNode(node);
       totalDistributed += reward;
       nodeCount += 1;
     }
@@ -818,11 +852,13 @@ export function updateProviderMetadata(binaryArgs: StaticArray<u8>): void {
 
 /**
  * Register as an allowed uploader by booking storage capacity. Caller must transfer
- * exactly amountGb * uploaderPricePerGb (nanoMAS) to the contract. Booked GB is
- * cumulative (can call again to add more). The server uses getIsAllowedUploader(address)
- * to allow uploads from storage admins or addresses with booked capacity.
+ * exactly amountGb * uploaderPricePerGb (nanoMAS) to the contract upfront. Payment is
+ * required at registration. If the user is already registered, this updates their
+ * storage size allowed to the new amount (replaces previous value). The server uses
+ * getIsAllowedUploader(address) to allow uploads from storage admins or addresses
+ * with booked capacity.
  * @param binaryArgs - Serialized Args containing:
- *   - amountGb: u64 (number of GB to book)
+ *   - amountGb: u64 (total number of GB to book/update to)
  */
 export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
   assertNotPaused();
@@ -856,12 +892,12 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
   const uploaderIndex = getUploaderIndex();
   const isInIndex = uploaderIndex.includes(caller);
 
-  // Calculate new total booked GB:
-  // - If caller is already in index: totalBookedGb includes existingGb, so add amountGb
-  // - If caller is not in index: totalBookedGb doesn't include them, so add existingGb + amountGb
+  // Calculate new total booked GB after updating this uploader:
+  // - Remove existing GB from total if user is already registered
+  // - Add the new amountGb to get the new total
   const newTotalBookedGb = isInIndex
-    ? totalBookedGb + amountGb
-    : totalBookedGb + existingGb + amountGb;
+    ? totalBookedGb - existingGb + amountGb
+    : totalBookedGb + amountGb;
 
   assert(
     totalAllocatedGb >= newTotalBookedGb,
@@ -872,13 +908,13 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
       ' GB available from providers',
   );
 
-  const newTotalGb = existingGb + amountGb;
-  setBookedUploaderGb(caller, newTotalGb);
+  // Set storage size to the new amount (update if already registered)
+  setBookedUploaderGb(caller, amountGb);
 
-  const index = getUploaderIndex();
-  if (!index.includes(caller)) {
-    index.push(caller);
-    setUploaderIndex(index);
+  // Add to index if not already present
+  if (!isInIndex) {
+    uploaderIndex.push(caller);
+    setUploaderIndex(uploaderIndex);
   }
 
   generateEvent(
@@ -887,7 +923,86 @@ export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
       ',' +
       amountGb.toString() +
       ',' +
-      newTotalGb.toString(),
+      (existingGb > 0 ? 'UPDATED' : 'NEW'),
+  );
+}
+
+/**
+ * Record a file upload to track storage usage per uploader.
+ * Callable by storage admins (servers) to record file sizes when files are uploaded.
+ * @param binaryArgs - Serialized Args containing:
+ *   - uploaderAddress: string (address of the uploader)
+ *   - fileSizeBytes: u64 (size of the uploaded file in bytes)
+ */
+export function recordFileUpload(binaryArgs: StaticArray<u8>): void {
+  assertNotPaused();
+  assert(isStorageAdmin(Context.caller().toString()), 'Caller is not a storage admin');
+
+  const args = new Args(binaryArgs);
+  const uploaderAddress = args
+    .nextString()
+    .expect('uploaderAddress argument is missing or invalid');
+  const fileSizeBytes = args
+    .nextU64()
+    .expect('fileSizeBytes argument is missing or invalid');
+
+  assert(fileSizeBytes > 0, 'fileSizeBytes must be greater than 0');
+
+  // Verify the uploader is allowed (either storage admin or has booked capacity)
+  assert(
+    isStorageAdmin(uploaderAddress) || getBookedUploaderGb(uploaderAddress) > 0,
+    'Uploader address is not allowed to upload',
+  );
+
+  // Update total usage for this uploader
+  const currentUsage = getUploaderUsage(uploaderAddress);
+  const newUsage = currentUsage + fileSizeBytes;
+  setUploaderUsage(uploaderAddress, newUsage);
+
+  generateEvent(
+    'FILE_UPLOAD_RECORDED:' +
+      uploaderAddress +
+      ',' +
+      fileSizeBytes.toString() +
+      ',' +
+      newUsage.toString(),
+  );
+}
+
+/**
+ * Remove file upload record to update storage usage when a file is deleted.
+ * Callable by storage admins (servers) to update usage when files are removed.
+ * @param binaryArgs - Serialized Args containing:
+ *   - uploaderAddress: string (address of the uploader)
+ *   - fileSizeBytes: u64 (size of the deleted file in bytes)
+ */
+export function removeFileUpload(binaryArgs: StaticArray<u8>): void {
+  assertNotPaused();
+  assert(isStorageAdmin(Context.caller().toString()), 'Caller is not a storage admin');
+
+  const args = new Args(binaryArgs);
+  const uploaderAddress = args
+    .nextString()
+    .expect('uploaderAddress argument is missing or invalid');
+  const fileSizeBytes = args
+    .nextU64()
+    .expect('fileSizeBytes argument is missing or invalid');
+
+  assert(fileSizeBytes > 0, 'fileSizeBytes must be greater than 0');
+
+  // Update total usage for this uploader
+  const currentUsage = getUploaderUsage(uploaderAddress);
+  // Prevent underflow
+  const newUsage = currentUsage > fileSizeBytes ? currentUsage - fileSizeBytes : 0;
+  setUploaderUsage(uploaderAddress, newUsage);
+
+  generateEvent(
+    'FILE_UPLOAD_REMOVED:' +
+      uploaderAddress +
+      ',' +
+      fileSizeBytes.toString() +
+      ',' +
+      newUsage.toString(),
   );
 }
 
@@ -1112,6 +1227,22 @@ export function getBookedUploaderGbView(
  */
 export function getUploaderPricePerGbView(_: StaticArray<u8>): StaticArray<u8> {
   return u64ToBytes(getUploaderPricePerGb());
+}
+
+/**
+ * Get total storage usage (in bytes) for an uploader address.
+ * This tracks the cumulative size of all files uploaded by this address.
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string (uploader address)
+ * @returns Serialized u64 (total bytes used)
+ */
+export function getUploaderUsageView(
+  binaryArgs: StaticArray<u8>,
+): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  return u64ToBytes(getUploaderUsage(address));
 }
 
 // ═══════════════════════════════════════════════════════════════════

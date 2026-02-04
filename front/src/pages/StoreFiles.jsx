@@ -90,7 +90,7 @@ export function StoreFiles() {
     return () => { cancelled = true }
   }, [])
 
-  // Quand la modal de confirmation s'ouvre : calcul du coût d'enregistrement uploader (invisible pour l'utilisateur, inclus dans le total)
+  // Quand la modal de confirmation s'ouvre : calcul du coût d'enregistrement uploader (paiement upfront pour le montant total)
   useEffect(() => {
     if (!confirmOpen || !address || !files.length) {
       setUploaderBooking({ needToBook: 0n, bookingNano: 0n })
@@ -102,7 +102,9 @@ export function StoreFiles() {
     Promise.all([getBookedUploaderGb(address), getUploaderPricePerGb()])
       .then(([bookedGb, pricePerGb]) => {
         if (cancelled) return
-        const needToBook = needBookingGb > bookedGb ? needBookingGb - bookedGb : 0n
+        // Payment is upfront for the full amount needed. If user is already registered,
+        // we update their storage size to the new amount (pays for full amount).
+        const needToBook = needBookingGb > bookedGb ? needBookingGb : 0n
         const bookingNano = needToBook * pricePerGb
         setUploaderBooking({ needToBook, bookingNano })
       })
@@ -224,13 +226,15 @@ export function StoreFiles() {
       .map((addr) => providers.find((p) => p.address === addr)?.endpoint)
       .filter(Boolean)
 
-    // 0. Enregistrement uploader si nécessaire (invisible : un seul total affiché)
+    // 0. Enregistrement uploader si nécessaire (paiement upfront pour le montant total)
+    // Si l'utilisateur est déjà enregistré, cela met à jour sa capacité autorisée
     if (uploaderBooking.needToBook > 0n) {
       try {
         if (typeof account.callSC !== 'function') {
           toast.error('Ce wallet ne supporte pas l\'enregistrement uploader (appel contrat avec paiement).')
           return
         }
+        // Enregistre/met à jour pour le montant total nécessaire (paiement upfront)
         await registerAsUploaderWithTransfer(account, uploaderBooking.needToBook)
       } catch (e) {
         toast.error(e?.message ?? 'Enregistrement uploader échoué. Vérifiez votre solde et réessayez.')

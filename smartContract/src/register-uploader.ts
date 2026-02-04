@@ -8,9 +8,11 @@ import {
 } from '@massalabs/massa-web3';
 
 /**
- * Book storage capacity to become an allowed uploader. Pays the contract
- * amountGb × uploaderPricePerGb (nanoMAS). After this, the storage server
- * will accept uploads from this address (getIsAllowedUploader returns true).
+ * Register as an allowed uploader by booking storage capacity. Payment must be made
+ * upfront: pays the contract amountGb × uploaderPricePerGb (nanoMAS). If the user
+ * is already registered, this updates their storage size allowed to the new amount
+ * (replaces previous value). After this, the storage server will accept uploads from
+ * this address (getIsAllowedUploader returns true).
  *
  * Usage:
  *   npx tsx src/register-uploader.ts [amountGb]

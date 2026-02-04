@@ -27,6 +27,9 @@ import {
   fundContract,
   unregisterStorageNode,
   updateProviderMetadata,
+  recordFileUpload,
+  removeFileUpload,
+  getUploaderUsageView,
 } from '../contracts/storage-registry';
 import { StorageNode } from '../structs/StorageNode';
 import { StorageConfig } from '../structs/StorageConfig';
@@ -495,5 +498,270 @@ describe('Storage Registry - Uploader booking', () => {
       new Args().add(UPLOADER_ADDRESS).serialize(),
     );
     expect(bytesToU64(allowedBytes)).toBe(1);
+  });
+});
+
+describe('Storage Registry - File Upload Tracking', () => {
+  const UPLOADER_ADDRESS =
+    'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
+  const STORAGE_ADMIN_ADDRESS =
+    'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3zz';
+  const DEFAULT_PRICE_PER_GB: u64 = 1_000_000;
+
+  beforeEach(() => {
+    deployContract();
+    // Register a storage node so there is capacity to book
+    switchUser(NODE_ADDRESS);
+    registerStorageNode(registerNodeArgs(100));
+    // Add a storage admin (server) that can record uploads
+    switchUser(ADMIN_ADDRESS);
+    addStorageAdmin(new Args().add(STORAGE_ADMIN_ADDRESS).serialize());
+  });
+
+  it('should return zero usage for uploader with no files', () => {
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(0);
+  });
+
+  it('should allow storage admin to record file upload', () => {
+    // First, register uploader with booked capacity
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    const amountGb: u64 = 5;
+    mockTransferredCoins(amountGb * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add(amountGb).serialize());
+
+    // Now record a file upload as storage admin
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const fileSizeBytes: u64 = 1_000_000_000; // 1 GB
+    const recordArgs = new Args()
+      .add(UPLOADER_ADDRESS)
+      .add<u64>(fileSizeBytes)
+      .serialize();
+    recordFileUpload(recordArgs);
+
+    // Verify usage was recorded
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(fileSizeBytes);
+  });
+
+  it('should track cumulative file uploads', () => {
+    // Register uploader
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(10 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(10).serialize());
+
+    // Record multiple file uploads
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const file1Size: u64 = 500_000_000; // 0.5 GB
+    const file2Size: u64 = 1_500_000_000; // 1.5 GB
+    const file3Size: u64 = 300_000_000; // 0.3 GB
+
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file1Size).serialize(),
+    );
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file2Size).serialize(),
+    );
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file3Size).serialize(),
+    );
+
+    // Verify cumulative usage
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(
+      file1Size + file2Size + file3Size,
+    );
+  });
+
+  it('should allow recording uploads for storage admin uploaders', () => {
+    // Add uploader as storage admin (no booking needed)
+    switchUser(ADMIN_ADDRESS);
+    addStorageAdmin(new Args().add(UPLOADER_ADDRESS).serialize());
+
+    // Record file upload for storage admin uploader
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const fileSizeBytes: u64 = 2_000_000_000; // 2 GB
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(fileSizeBytes).serialize(),
+    );
+
+    // Verify usage was recorded
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(fileSizeBytes);
+  });
+
+  throws(
+    'should fail to record upload when caller is not storage admin',
+    () => {
+      // Register uploader
+      switchUser(UPLOADER_ADDRESS);
+      mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+      mockTransferredCoins(5 * DEFAULT_PRICE_PER_GB);
+      registerAsUploader(new Args().add<u64>(5).serialize());
+
+      // Try to record as non-admin (should fail)
+      switchUser(UPLOADER_ADDRESS);
+      recordFileUpload(
+        new Args()
+          .add(UPLOADER_ADDRESS)
+          .add<u64>(1_000_000_000)
+          .serialize(),
+      );
+    },
+  );
+
+  throws(
+    'should fail to record upload for non-allowed uploader',
+    () => {
+      const NOT_ALLOWED_ADDRESS =
+        'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3xx';
+
+      // Try to record for address that is not storage admin and has no booking
+      switchUser(STORAGE_ADMIN_ADDRESS);
+      recordFileUpload(
+        new Args()
+          .add(NOT_ALLOWED_ADDRESS)
+          .add<u64>(1_000_000_000)
+          .serialize(),
+      );
+    },
+  );
+
+  throws('should fail to record upload with zero file size', () => {
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(5 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(5).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize(),
+    );
+  });
+
+  it('should allow storage admin to remove file upload', () => {
+    // Register uploader and record uploads
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(10 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(10).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const fileSize: u64 = 2_000_000_000; // 2 GB
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(fileSize).serialize(),
+    );
+
+    // Remove the file
+    removeFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(fileSize).serialize(),
+    );
+
+    // Verify usage is back to zero
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(0);
+  });
+
+  it('should prevent underflow when removing file upload', () => {
+    // Register uploader
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(10 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(10).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const fileSize: u64 = 1_000_000_000; // 1 GB
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(fileSize).serialize(),
+    );
+
+    // Try to remove more than was recorded (should prevent underflow)
+    const largerSize: u64 = 2_000_000_000; // 2 GB
+    removeFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(largerSize).serialize(),
+    );
+
+    // Usage should be 0, not negative
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(0);
+  });
+
+  it('should handle partial file removal correctly', () => {
+    // Register uploader and record multiple uploads
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(10 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(10).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    const file1Size: u64 = 1_000_000_000; // 1 GB
+    const file2Size: u64 = 2_000_000_000; // 2 GB
+    const file3Size: u64 = 500_000_000; // 0.5 GB
+
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file1Size).serialize(),
+    );
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file2Size).serialize(),
+    );
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file3Size).serialize(),
+    );
+
+    // Remove one file
+    removeFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(file2Size).serialize(),
+    );
+
+    // Verify remaining usage
+    const usageBytes = getUploaderUsageView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(usageBytes)).toBe(file1Size + file3Size);
+  });
+
+  throws('should fail to remove file when caller is not storage admin', () => {
+    // Register uploader and record upload
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(5 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(5).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    recordFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(1_000_000_000).serialize(),
+    );
+
+    // Try to remove as non-admin (should fail)
+    switchUser(UPLOADER_ADDRESS);
+    removeFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(1_000_000_000).serialize(),
+    );
+  });
+
+  throws('should fail to remove file with zero file size', () => {
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    mockTransferredCoins(5 * DEFAULT_PRICE_PER_GB);
+    registerAsUploader(new Args().add<u64>(5).serialize());
+
+    switchUser(STORAGE_ADMIN_ADDRESS);
+    removeFileUpload(
+      new Args().add(UPLOADER_ADDRESS).add<u64>(0).serialize(),
+    );
   });
 });
