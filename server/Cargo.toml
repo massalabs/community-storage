@@ -15,6 +15,7 @@ uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 libp2p = { version = "0.56.0", features = ["tcp", "noise", "ping", "tokio", "yamux"] }
+openssl = { version = "0.10", features = ["vendored"] }
 futures = "0.3"
 dotenvy = "0.15"
 blake3 = "1.5"

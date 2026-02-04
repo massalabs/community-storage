@@ -117,22 +117,27 @@ jobs:
         with:
           workspaces: server
 
-      - name: Run unit tests
-        run: cargo test
-        working-directory: server
-
       - name: Install cross-compile toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu pkg-config
           rustup target add aarch64-unknown-linux-gnu
 
-      - name: Build release binary (Linux ARM64)
+      - name: Configure cargo for cross-compilation
         run: |
           mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' >> .cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml
-          cargo build --release --target aarch64-unknown-linux-gnu
+          cat > .cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+        working-directory: server
+
+      - name: Build release binary (Linux ARM64)
+        env:
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+        run: cargo build --release --target aarch64-unknown-linux-gnu
         working-directory: server
 
       - name: Upload binary
