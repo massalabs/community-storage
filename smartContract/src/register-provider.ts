@@ -78,7 +78,8 @@ console.log('Allocated GB (from provider /config):', ALLOCATED_GB.toString());
 console.log('Endpoint:', ENDPOINT);
 console.log('P2P addrs:', P2P_ADDRS.length ? P2P_ADDRS : '(none)');
 
-// 1. Register or update: if node already registered, update allocation; otherwise register.
+// 1. Register or update: if node already registered, update allocation; otherwise register
+//    with initial metadata (endpoint + P2P addresses).
 const myAddress = account.address.toString();
 
 const nodeInfo = await contract.read(
@@ -97,25 +98,18 @@ if (nodeExists) {
     operation.id,
   );
 } else {
-  const registerArgs = new Args().addU64(ALLOCATED_GB);
+  const registerArgs = new Args()
+    .addU64(ALLOCATED_GB)
+    .addString(ENDPOINT)
+    .addArray(P2P_ADDRS, ArrayTypes.STRING);
   operation = await contract.call('registerStorageNode', registerArgs);
-  console.log('registerStorageNode call sent. Operation id:', operation.id);
+  console.log(
+    'registerStorageNode (with metadata) call sent. Operation id:',
+    operation.id,
+  );
 }
 
 await operation.waitFinalExecution();
 console.log('Operation finalized:', operation.id);
-
-// 2. Update provider metadata (endpoint + P2P addresses)
-{
-  const metaArgs = new Args()
-    .addString(ENDPOINT)
-    .addArray(P2P_ADDRS, ArrayTypes.STRING);
-
-  const op = await contract.call('updateProviderMetadata', metaArgs);
-
-  console.log('updateProviderMetadata call sent. Operation id:', op.id);
-  await op.waitFinalExecution();
-  console.log('Operation finalized:', op.id);
-}
 
 console.log('\n--- Provider registration script complete ---');

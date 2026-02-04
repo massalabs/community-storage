@@ -4,11 +4,13 @@
 use tower_http::cors::{Any, CorsLayer};
 
 mod api;
+mod auth;
 mod config;
 mod p2p;
+mod sc_client;
 mod storage;
 
-use api::router;
+use api::{router, UploadAuthConfig};
 use config::Config;
 use storage::Storage;
 
@@ -55,7 +57,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
     p2p::spawn(config.p2p_listen_addr.clone(), config.massa_address.clone());
 
-    let app = router(storage).layer(
+    // Upload authentication is mandatory: server refuses to start if
+    // STORAGE_REGISTRY_ADDRESS or MASSA_JSON_RPC are missing (see Config::from_env).
+    tracing::info!(
+        registry = %config.storage_registry_address,
+        rpc = %config.massa_json_rpc,
+        "upload authentication enabled (Massa signature + getIsAllowedUploader)"
+    );
+    let upload_auth = Some(UploadAuthConfig {
+        storage_registry_address: config.storage_registry_address.clone(),
+        massa_json_rpc: config.massa_json_rpc.clone(),
+    });
+
+    let app = router(storage, upload_auth).layer(
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)

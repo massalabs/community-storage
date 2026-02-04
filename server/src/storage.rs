@@ -1,5 +1,6 @@
 //! Simple filesystem storage backend with indexing by namespace and id.
 //! Data is stored under `{storage_path}/{namespace}/{id}`; listing reads directory metadata.
+//! Optional per-blob metadata (e.g. min_replication) is stored in `{id}.meta` (JSON).
 
 use std::fs;
 use std::io;
@@ -7,6 +8,49 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use uuid::Uuid;
+
+/// Allowed range for uploader-requested minimum replication (1 = single copy only).
+pub const MIN_REPLICATION_MIN: u8 = 1;
+pub const MIN_REPLICATION_MAX: u8 = 32;
+
+/// Per-blob metadata stored in `{id}.meta`. Used so that when P2P replication is
+/// implemented, the system can enforce the uploader's minimum replication requirement.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BlobMeta {
+    /// Minimum number of replicas the uploader requested (1 = no requirement beyond single copy).
+    pub min_replication: u8,
+    /// Massa address of the uploader (when upload auth was used). Omitted for legacy uploads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploader_address: Option<String>,
+}
+
+fn meta_path_for_id(ns_path: &Path, id: &str) -> PathBuf {
+    ns_path.join(format!("{}.meta", id))
+}
+
+/// Read BlobMeta from `{id}.meta`; returns default (min_replication=1, no uploader) if missing/invalid.
+fn read_blob_meta(ns_path: &Path, id: &str) -> BlobMeta {
+    let meta_path = meta_path_for_id(ns_path, id);
+    let contents = match fs::read_to_string(&meta_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return BlobMeta {
+                min_replication: MIN_REPLICATION_MIN,
+                uploader_address: None,
+            }
+        }
+    };
+    let meta: BlobMeta = match serde_json::from_str(&contents) {
+        Ok(m) => m,
+        Err(_) => {
+            return BlobMeta {
+                min_replication: MIN_REPLICATION_MIN,
+                uploader_address: None,
+            }
+        }
+    };
+    meta
+}
 
 /// Sanitize a segment for use in paths (namespace or id): only alphanumeric, dash, underscore.
 fn sanitize_segment(s: &str) -> String {
@@ -29,10 +73,15 @@ pub struct Storage {
 
 #[derive(Debug, serde::Serialize)]
 pub struct IndexEntry {
+    /// Massa address of the uploader (when upload auth was used). Null for legacy uploads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uploader_address: Option<String>,
     pub id: String,
     pub namespace: String,
     pub size: u64,
     pub created_at: u64,
+    /// Minimum replication requested by the uploader (1 if no metadata or not set).
+    pub min_replication: u8,
 }
 
 impl Storage {
@@ -84,11 +133,14 @@ impl Storage {
 
     /// Store raw bytes under namespace with optional id; returns the id used.
     /// Returns an error if current usage + data would exceed the storage limit.
+    /// `min_replication` and optional `uploader_address` are stored in `{id}.meta`.
     pub fn put(
         &self,
         namespace: &str,
         id_hint: Option<&str>,
         data: &[u8],
+        min_replication: u8,
+        uploader_address: Option<String>,
     ) -> io::Result<String> {
         let current = self.total_size()?;
         let new_total = current.saturating_add(data.len() as u64);
@@ -108,6 +160,15 @@ impl Storage {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let path = ns_path.join(&id);
         fs::write(&path, data)?;
+        let meta = BlobMeta {
+            min_replication,
+            uploader_address,
+        };
+        let meta_path = meta_path_for_id(&ns_path, &id);
+        fs::write(
+            meta_path,
+            serde_json::to_string(&meta).expect("BlobMeta serialization is infallible"),
+        )?;
         Ok(id)
     }
 
@@ -170,10 +231,15 @@ impl Storage {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() {
-                let id = entry
+                let name = entry
                     .file_name()
                     .into_string()
                     .unwrap_or_default();
+                // Skip metadata sidecar files
+                if name.ends_with(".meta") {
+                    continue;
+                }
+                let id = name;
                 let meta = entry.metadata()?;
                 let size = meta.len();
                 let created_at = meta
@@ -182,11 +248,14 @@ impl Storage {
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
+                let meta = read_blob_meta(dir, &id);
                 out.push(IndexEntry {
+                    uploader_address: meta.uploader_address,
                     id,
                     namespace: namespace.to_string(),
                     size,
                     created_at,
+                    min_replication: meta.min_replication,
                 });
             }
         }

@@ -3,18 +3,29 @@
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
 
-use crate::storage::Storage;
+use crate::auth::verify_upload_signature;
+use crate::sc_client::get_is_allowed_uploader;
+use crate::storage::{Storage, MIN_REPLICATION_MAX, MIN_REPLICATION_MIN};
+
+/// Auth config for upload: when set, POST /upload requires Massa signature + storage admin.
+#[derive(Clone)]
+pub struct UploadAuthConfig {
+    pub storage_registry_address: String,
+    pub massa_json_rpc: String,
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Storage,
+    /// When present, uploads require X-Massa-* headers and getIsStorageAdmin(addr) == true.
+    pub upload_auth: Option<UploadAuthConfig>,
 }
 
 /// Query for list: optional namespace filter.
@@ -23,33 +34,139 @@ pub struct ListQuery {
     pub namespace: Option<String>,
 }
 
-/// Upload: optional headers for namespace and id (handled in handler via headers or query).
+/// Upload: optional query params and min_replication (uploader-requested minimum replicas).
 #[derive(Debug, serde::Deserialize)]
 pub struct UploadQuery {
     pub namespace: Option<String>,
     pub id: Option<String>,
+    /// Minimum number of replicas the uploader requires (1–32). Default 1 when omitted.
+    pub min_replication: Option<u8>,
 }
 
 /// POST /upload
 /// Body: raw binary data.
-/// Query: ?namespace=...&id=...  (namespace defaults to "default", id is optional — server generates UUID)
-/// Or headers: X-Namespace, X-Id (optional)
+/// When upload auth is enabled: requires X-Massa-Address, X-Massa-Signature, X-Massa-Public-Key;
+/// verifies signature (Blake3(body) + Ed25519) and getIsStorageAdmin(address) on the storage registry SC.
+/// Query: ?namespace=...&id=...&min_replication=...  (namespace defaults to "default", id optional, min_replication 1–32 default 1)
 pub async fn upload(
     State(state): State<Arc<AppState>>,
     Query(query): Query<UploadQuery>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
+    let mut uploader_address: Option<String> = None;
+
+    // Optional: verify Massa signature and storage admin
+    if let Some(ref auth) = state.upload_auth {
+        let massa_address = match headers.get("x-massa-address").and_then(|v| v.to_str().ok()) {
+            Some(s) => s.trim().to_string(),
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({ "error": "missing x-massa-address header" })),
+                )
+                    .into_response()
+            }
+        };
+        let signature = match headers.get("x-massa-signature").and_then(|v| v.to_str().ok()) {
+            Some(s) => s.trim().to_string(),
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({ "error": "missing x-massa-signature header" })),
+                )
+                    .into_response()
+            }
+        };
+        let public_key = match headers.get("x-massa-public-key").and_then(|v| v.to_str().ok()) {
+            Some(s) => s.trim().to_string(),
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({ "error": "missing x-massa-public-key header" })),
+                )
+                    .into_response()
+            }
+        };
+
+        if let Err(e) = verify_upload_signature(&body, &massa_address, &signature, &public_key) {
+            tracing::warn!(error = %e, "upload signature verification failed");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+
+        match get_is_allowed_uploader(
+            &auth.massa_json_rpc,
+            &auth.storage_registry_address,
+            &massa_address,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "error": "address is not an allowed uploader; register via registerAsUploader (pay fee) or be added as storage admin"
+                    })),
+                )
+                    .into_response()
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "getIsAllowedUploader RPC failed");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({ "error": format!("storage registry check failed: {}", e) })),
+                )
+                    .into_response();
+            }
+        }
+        uploader_address = Some(massa_address);
+    }
+
     let namespace = query
         .namespace
         .as_deref()
         .unwrap_or("default")
         .to_string();
     let id_hint = query.id.as_deref();
+    let min_replication_param = query.min_replication.or_else(|| {
+        headers
+            .get("x-min-replication")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u8>().ok())
+    });
+    let min_replication = match min_replication_param {
+        Some(n) if (MIN_REPLICATION_MIN..=MIN_REPLICATION_MAX).contains(&n) => n,
+        Some(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("min_replication must be between {} and {}", MIN_REPLICATION_MIN, MIN_REPLICATION_MAX)
+                })),
+            )
+                .into_response()
+        }
+        None => MIN_REPLICATION_MIN,
+    };
 
-    match state.storage.put(&namespace, id_hint, &body) {
+    match state
+        .storage
+        .put(&namespace, id_hint, &body, min_replication, uploader_address)
+    {
         Ok(id) => {
-            tracing::info!(namespace, id, size = body.len(), "upload stored");
-            (StatusCode::CREATED, Json(serde_json::json!({ "id": id, "namespace": namespace })))
+            tracing::info!(namespace, id, size = body.len(), min_replication, "upload stored");
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "id": id,
+                    "namespace": namespace,
+                    "min_replication": min_replication
+                })),
+            )
                 .into_response()
         }
         Err(e) => {
@@ -174,8 +291,11 @@ pub async fn storage_config(
     }
 }
 
-pub fn router(storage: Storage) -> Router {
-    let state = Arc::new(AppState { storage });
+pub fn router(storage: Storage, upload_auth: Option<UploadAuthConfig>) -> Router {
+    let state = Arc::new(AppState {
+        storage,
+        upload_auth,
+    });
     Router::new()
         .route("/health", get(health))
         .route("/config", get(storage_config))

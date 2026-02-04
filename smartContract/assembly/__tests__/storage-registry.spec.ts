@@ -14,9 +14,13 @@ import {
   getProviderMetadataView,
   getRegisteredAddressesView,
   getIsStorageAdmin,
+  getIsAllowedUploader,
+  getBookedUploaderGbView,
+  getUploaderPricePerGbView,
   addChallenger,
   addStorageAdmin,
   removeStorageAdmin,
+  registerAsUploader,
   issueChallenge,
   submitProof,
   distributeRewards,
@@ -422,5 +426,61 @@ describe('Storage Registry - Fund Contract', () => {
     switchUser(NODE_ADDRESS);
     mockTransferredCoins(0);
     fundContract(new StaticArray<u8>(0));
+  });
+});
+
+describe('Storage Registry - Uploader booking', () => {
+  const UPLOADER_ADDRESS =
+    'AU1mARGo8BjjFLbUTd3Fihs95EL8wwjPgcoHGzJTdQhQ14KPa3yh';
+  const DEFAULT_PRICE_PER_GB: u64 = 1_000_000;
+
+  beforeEach(() => {
+    deployContract();
+  });
+
+  it('should return default price per GB', () => {
+    const bytes = getUploaderPricePerGbView(new StaticArray<u8>(0));
+    expect(bytesToU64(bytes)).toBe(DEFAULT_PRICE_PER_GB);
+  });
+
+  it('should allow booking storage by paying fee', () => {
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000); // ensure address exists and has balance
+    const amountGb: u64 = 2;
+    const requiredPayment = amountGb * DEFAULT_PRICE_PER_GB;
+    mockTransferredCoins(requiredPayment);
+
+    registerAsUploader(new Args().add(amountGb).serialize());
+
+    const bookedBytes = getBookedUploaderGbView(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(bookedBytes)).toBe(amountGb);
+
+    const allowedBytes = getIsAllowedUploader(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(allowedBytes)).toBe(1);
+  });
+
+  it('should reject booking with insufficient payment', () => {
+    switchUser(UPLOADER_ADDRESS);
+    mockBalance(UPLOADER_ADDRESS, 10_000_000_000);
+    const amountGb: u64 = 2;
+    mockTransferredCoins(amountGb * DEFAULT_PRICE_PER_GB - 1);
+
+    throws('Insufficient payment', () => {
+      registerAsUploader(new Args().add(amountGb).serialize());
+    });
+  });
+
+  it('should allow storage admin without booking', () => {
+    switchUser(ADMIN_ADDRESS);
+    addStorageAdmin(new Args().add(UPLOADER_ADDRESS).serialize());
+
+    const allowedBytes = getIsAllowedUploader(
+      new Args().add(UPLOADER_ADDRESS).serialize(),
+    );
+    expect(bytesToU64(allowedBytes)).toBe(1);
   });
 });

@@ -6,9 +6,11 @@
  *
  * - No staking required - rewards are distributed only to providers who pass
  *   their data availability challenges.
- * - Cloud storage admins: addresses allowed to upload data to massa-storage-client.
- *   The storage client calls getIsStorageAdmin(uploader) before accepting POST /upload.
- *   Admin can add/remove storage admins via addStorageAdmin / removeStorageAdmin.
+ * - Allowed uploaders: (1) Storage admins (admin-added via addStorageAdmin), or
+ *   (2) Users who booked storage by paying the fixed price per GB (registerAsUploader).
+ *   The storage client calls getIsAllowedUploader(uploader) before accepting POST /upload.
+ * - Uploader booking: fixed price per GB (uploaderPricePerGb); user transfers coins and
+ *   calls registerAsUploader(amountGb) to become an allowed uploader for that capacity.
  */
 import {
   Context,
@@ -41,11 +43,17 @@ const CHALLENGE_PREFIX = 'chal_';
 const PERIOD_PREFIX = 'period_';
 const CHALLENGER_PREFIX = 'challenger_';
 const STORAGE_ADMIN_PREFIX = 'storage_admin_';
+const UPLOADER_BOOKING_PREFIX = 'uploader_booking_';
+const UPLOADER_INDEX_KEY = 'uploader_index';
+const UPLOADER_PRICE_PER_GB_KEY = 'uploader_price_per_gb';
 const ADMIN_KEY = 'admin';
 const CONFIG_KEY = 'config';
 const TOTAL_NODES_KEY = 'total_nodes';
 const NODE_INDEX_PREFIX = 'node_idx_';
 const PAUSED_KEY = 'paused';
+
+/** Default price per GB for uploader booking (nanoMAS). 1_000_000 = 0.001 MAS per GB */
+const DEFAULT_UPLOADER_PRICE_PER_GB: u64 = 1_000_000;
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
@@ -91,8 +99,59 @@ function storageAdminKey(address: string): string {
   return STORAGE_ADMIN_PREFIX + address;
 }
 
+function uploaderBookingKey(address: string): string {
+  return UPLOADER_BOOKING_PREFIX + address;
+}
+
 function isStorageAdmin(address: string): bool {
   return Storage.has(stringToBytes(storageAdminKey(address)));
+}
+
+function getUploaderPricePerGb(): u64 {
+  const key = stringToBytes(UPLOADER_PRICE_PER_GB_KEY);
+  if (!Storage.has(key)) {
+    return DEFAULT_UPLOADER_PRICE_PER_GB;
+  }
+  return bytesToU64(Storage.get(key));
+}
+
+function setUploaderPricePerGb(pricePerGb: u64): void {
+  Storage.set(stringToBytes(UPLOADER_PRICE_PER_GB_KEY), u64ToBytes(pricePerGb));
+}
+
+function getBookedUploaderGb(address: string): u64 {
+  const key = stringToBytes(uploaderBookingKey(address));
+  if (!Storage.has(key)) {
+    return 0;
+  }
+  return bytesToU64(Storage.get(key));
+}
+
+function setBookedUploaderGb(address: string, gb: u64): void {
+  if (gb === 0) {
+    const key = stringToBytes(uploaderBookingKey(address));
+    if (Storage.has(key)) {
+      Storage.del(key);
+    }
+    return;
+  }
+  Storage.set(stringToBytes(uploaderBookingKey(address)), u64ToBytes(gb));
+}
+
+function getUploaderIndex(): Array<string> {
+  const key = stringToBytes(UPLOADER_INDEX_KEY);
+  if (!Storage.has(key)) {
+    return [];
+  }
+  const args = new Args(Storage.get(key), 0);
+  return args.nextStringArray().expect('uploader index');
+}
+
+function setUploaderIndex(addresses: Array<string>): void {
+  Storage.set(
+    stringToBytes(UPLOADER_INDEX_KEY),
+    new Args().add<Array<string>>(addresses).serialize(),
+  );
 }
 
 function getConfig(): StorageConfig {
@@ -176,6 +235,38 @@ function setTotalNodes(count: u64): void {
   Storage.set(stringToBytes(TOTAL_NODES_KEY), u64ToBytes(count));
 }
 
+/**
+ * Get total storage capacity (in GB) advertised by all active providers.
+ */
+function getTotalAllocatedGbAcrossProviders(): u64 {
+  const addresses = getNodeIndex();
+  let total: u64 = 0;
+
+  for (let i = 0; i < addresses.length; i++) {
+    const node = getNode(addresses[i]);
+    if (node === null || !node!.active) {
+      continue;
+    }
+    total += node!.allocatedGb;
+  }
+
+  return total;
+}
+
+/**
+ * Get total storage capacity (in GB) already booked by all uploaders.
+ */
+function getTotalBookedGbAcrossUploaders(): u64 {
+  const uploaders = getUploaderIndex();
+  let total: u64 = 0;
+
+  for (let i = 0; i < uploaders.length; i++) {
+    total += getBookedUploaderGb(uploaders[i]);
+  }
+
+  return total;
+}
+
 function isAdmin(address: string): bool {
   const key = stringToBytes(ADMIN_KEY);
   if (!Storage.has(key)) {
@@ -247,6 +338,7 @@ export function constructor(binaryArgs: StaticArray<u8>): void {
   setConfig(config);
 
   setTotalNodes(0);
+  setUploaderPricePerGb(DEFAULT_UPLOADER_PRICE_PER_GB);
 
   generateEvent('STORAGE_REGISTRY_DEPLOYED:' + admin);
 }
@@ -256,7 +348,7 @@ export function constructor(binaryArgs: StaticArray<u8>): void {
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Register as a storage provider (no staking required)
+ * Register as a storage provider (no staking required).
  * @param binaryArgs - Serialized Args containing:
  *   - allocatedGb: u64 (storage allocation in GB)
  */
@@ -696,6 +788,63 @@ export function updateProviderMetadata(binaryArgs: StaticArray<u8>): void {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// UPLOADER BOOKING
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Register as an allowed uploader by booking storage capacity. Caller must transfer
+ * exactly amountGb * uploaderPricePerGb (nanoMAS) to the contract. Booked GB is
+ * cumulative (can call again to add more). The server uses getIsAllowedUploader(address)
+ * to allow uploads from storage admins or addresses with booked capacity.
+ * @param binaryArgs - Serialized Args containing:
+ *   - amountGb: u64 (number of GB to book)
+ */
+export function registerAsUploader(binaryArgs: StaticArray<u8>): void {
+  assertNotPaused();
+
+  const args = new Args(binaryArgs);
+  const amountGb = args
+    .nextU64()
+    .expect('amountGb argument is missing or invalid');
+
+  assert(amountGb > 0, 'amountGb must be greater than 0');
+
+  const pricePerGb = getUploaderPricePerGb();
+  const requiredPayment = amountGb * pricePerGb;
+  const transferred = Context.transferredCoins();
+  assert(
+    transferred >= requiredPayment,
+    'Insufficient payment: need ' +
+      requiredPayment.toString() +
+      ' nanoMAS for ' +
+      amountGb.toString() +
+      ' GB at ' +
+      pricePerGb.toString() +
+      ' per GB',
+  );
+
+  const caller = Context.caller().toString();
+  const existingGb = getBookedUploaderGb(caller);
+  const newTotalGb = existingGb + amountGb;
+  setBookedUploaderGb(caller, newTotalGb);
+
+  const index = getUploaderIndex();
+  if (!index.includes(caller)) {
+    index.push(caller);
+    setUploaderIndex(index);
+  }
+
+  generateEvent(
+    'UPLOADER_BOOKED:' +
+      caller +
+      ',' +
+      amountGb.toString() +
+      ',' +
+      newTotalGb.toString(),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // VIEW FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -819,6 +968,29 @@ export function getNodeAddressAt(binaryArgs: StaticArray<u8>): StaticArray<u8> {
 }
 
 /**
+ * Get global storage usage statistics across all providers and uploaders.
+ * Returns serialized Args:
+ *   - totalAllocatedGb: u64
+ *   - totalBookedGb: u64
+ *   - availableGb: u64
+ */
+export function getGlobalStorageUsageView(_: StaticArray<u8>): StaticArray<u8> {
+  const totalAllocatedGb = getTotalAllocatedGbAcrossProviders();
+  const totalBookedGb = getTotalBookedGbAcrossUploaders();
+
+  let availableGb: u64 = 0;
+  if (totalAllocatedGb > totalBookedGb) {
+    availableGb = totalAllocatedGb - totalBookedGb;
+  }
+
+  return new Args()
+    .add<u64>(totalAllocatedGb)
+    .add<u64>(totalBookedGb)
+    .add<u64>(availableGb)
+    .serialize();
+}
+
+/**
  * Calculate pending rewards for a node
  * @param binaryArgs - Serialized Args containing:
  *   - address: string
@@ -839,8 +1011,7 @@ export function calculatePendingRewards(
 }
 
 /**
- * Check if an address is a cloud storage admin (allowed to upload data to storage client).
- * Used by massa-storage-client to verify uploader before accepting POST /upload.
+ * Check if an address is a cloud storage admin (added by admin via addStorageAdmin).
  * @param binaryArgs - Serialized Args containing:
  *   - address: string
  * @returns Serialized bool as u64 (1 = true, 0 = false)
@@ -852,6 +1023,48 @@ export function getIsStorageAdmin(
   const address = args.nextString().expect('address argument is missing');
 
   return u64ToBytes(isStorageAdmin(address) ? 1 : 0);
+}
+
+/**
+ * Check if an address is allowed to upload: either a storage admin or has booked
+ * storage capacity (paid registerAsUploader). Used by the storage server before accepting POST /upload.
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ * @returns Serialized bool as u64 (1 = true, 0 = false)
+ */
+export function getIsAllowedUploader(
+  binaryArgs: StaticArray<u8>,
+): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  const allowed = isStorageAdmin(address) || getBookedUploaderGb(address) > 0;
+  return u64ToBytes(allowed ? 1 : 0);
+}
+
+/**
+ * Get the number of GB booked by an address (paid via registerAsUploader).
+ * @param binaryArgs - Serialized Args containing:
+ *   - address: string
+ * @returns Serialized u64 (booked GB)
+ */
+export function getBookedUploaderGbView(
+  binaryArgs: StaticArray<u8>,
+): StaticArray<u8> {
+  const args = new Args(binaryArgs);
+  const address = args.nextString().expect('address argument is missing');
+
+  return u64ToBytes(getBookedUploaderGb(address));
+}
+
+/**
+ * Get the current price per GB for uploader booking (nanoMAS). Used to compute
+ * payment for registerAsUploader(amountGb).
+ * @param _ - unused
+ * @returns Serialized u64
+ */
+export function getUploaderPricePerGbView(_: StaticArray<u8>): StaticArray<u8> {
+  return u64ToBytes(getUploaderPricePerGb());
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -945,6 +1158,25 @@ export function removeStorageAdmin(binaryArgs: StaticArray<u8>): void {
   }
 
   generateEvent('STORAGE_ADMIN_REMOVED:' + address);
+}
+
+/**
+ * Set the fixed price per GB for uploader booking (admin only). In nanoMAS.
+ * @param binaryArgs - Serialized Args containing:
+ *   - pricePerGb: u64
+ */
+export function setUploaderPricePerGbAdmin(binaryArgs: StaticArray<u8>): void {
+  assertAdmin();
+
+  const args = new Args(binaryArgs);
+  const pricePerGb = args
+    .nextU64()
+    .expect('pricePerGb argument is missing or invalid');
+
+  assert(pricePerGb > 0, 'pricePerGb must be greater than 0');
+  setUploaderPricePerGb(pricePerGb);
+
+  generateEvent('UPLOADER_PRICE_PER_GB_SET:' + pricePerGb.toString());
 }
 
 /**
