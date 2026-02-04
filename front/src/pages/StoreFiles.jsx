@@ -260,6 +260,7 @@ export function StoreFiles() {
       providerEndpoints: providerEndpoints.length ? providerEndpoints : undefined,
       uploadedAt: now.toISOString(),
       expiresAt: expires.toISOString(),
+      uploaderAddress: address,
     }))
 
     // 1. D'abord envoyer le fichier aux providers ; on ne prélève les MAS qu'après succès
@@ -305,13 +306,13 @@ export function StoreFiles() {
       }
     }
 
-    addStoredFiles(entries)
+    if (address) addStoredFiles(address, entries)
     setStoring(false)
     setConfirmOpen(false)
     setStoreError(null)
     clearAllFiles()
     navigate('/my-files')
-  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, clearAllFiles, navigate])
+  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, address, clearAllFiles, navigate])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 

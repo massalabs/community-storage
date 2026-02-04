@@ -140,7 +140,7 @@ const EXTEND_OPTIONS = [
 ]
 
 export function MyFiles() {
-  const { connected, account } = useWallet()
+  const { connected, account, address } = useWallet()
   const [list, setList] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [extending, setExtending] = useState(false)
@@ -150,8 +150,8 @@ export function MyFiles() {
   const [copiedEntryId, setCopiedEntryId] = useState(null)
 
   const load = useCallback(() => {
-    setList(getStoredFiles())
-  }, [])
+    setList(getStoredFiles(address ?? null))
+  }, [address])
 
   useEffect(() => {
     load()
@@ -192,7 +192,7 @@ export function MyFiles() {
       return
     }
     setExtending(true)
-    extendStoredFiles(ids, extendMonths)
+    if (address) extendStoredFiles(address, ids, extendMonths)
     setExtending(false)
     setSelectedIds(new Set())
     load()
@@ -200,7 +200,7 @@ export function MyFiles() {
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
-    removeStoredFiles([...selectedIds])
+    if (address) removeStoredFiles(address, [...selectedIds])
     setSelectedIds(new Set())
     load()
   }
@@ -230,7 +230,7 @@ export function MyFiles() {
       return
     }
     setExtending(true)
-    extendStoredFiles([id], months)
+    if (address) extendStoredFiles(address, [id], months)
     setExtending(false)
     load()
   }
@@ -245,7 +245,7 @@ export function MyFiles() {
         const contractAddress = getContractAddress()
         await account.transfer(contractAddress, totalNano)
       }
-      extendStoredFiles(ids, months)
+      if (address) extendStoredFiles(address, ids, months)
       setExtendConfirm(null)
       setSelectedIds(new Set())
       load()
@@ -254,7 +254,7 @@ export function MyFiles() {
     } finally {
       setExtending(false)
     }
-  }, [extendConfirm, account, load])
+  }, [extendConfirm, account, address, load])
 
   const handleExtendCancel = useCallback(() => {
     setExtendConfirm(null)
@@ -262,7 +262,7 @@ export function MyFiles() {
   }, [])
 
   const handleDeleteOne = (id) => {
-    removeStoredFiles([id])
+    if (address) removeStoredFiles(address, [id])
     setSelectedIds((prev) => {
       const next = new Set(prev)
       next.delete(id)
@@ -318,7 +318,7 @@ export function MyFiles() {
             Fichiers hébergés. Prolongez en lot.
           </p>
           <p className="mt-1 text-xs text-zinc-600">
-            La liste est enregistrée sur cet appareil. Le bouton Télécharger récupère le fichier hébergé chez le provider.
+            Fichiers que vous avez hébergés et signés avec votre adresse (enregistrés localement par wallet). Télécharger récupère le fichier chez le provider.
           </p>
         </div>
         <Link
@@ -328,6 +328,14 @@ export function MyFiles() {
           Upload
         </Link>
       </div>
+
+      {!address && (
+        <div className="card-panel p-4 border-line bg-surface/80">
+          <p className="text-sm text-zinc-400">
+            Connectez votre wallet pour voir les fichiers que vous avez hébergés et signés avec votre adresse.
+          </p>
+        </div>
+      )}
 
       {extendError && !extendConfirm && (
         <div className="card-panel p-4 border-red-500/30 bg-red-500/5">
