@@ -60,32 +60,3 @@ export function removeStoredFiles(ids) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
   return list
 }
-
-/** Fichiers de démo pour le bac à sable (quand la liste réelle est vide). */
-const MOCK_PROVIDER_ADDRESSES = [
-  'AU12Provider1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-  'AU12Provider2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-  'AU12Provider3cccccccccccccccccccccccccccccccccccccccc',
-]
-
-function makeExpires(monthsFromNow) {
-  const d = new Date()
-  d.setMonth(d.getMonth() + monthsFromNow)
-  return d.toISOString()
-}
-
-function makeUploaded(monthsAgo) {
-  const d = new Date()
-  d.setMonth(d.getMonth() - monthsAgo)
-  return d.toISOString()
-}
-
-export function getSandboxMockFiles() {
-  return [
-    { id: 'sandbox-1', name: 'rapport-2024.pdf', size: 2_400_000, replicationCount: 2, durationMonths: 12, providers: [MOCK_PROVIDER_ADDRESSES[0], MOCK_PROVIDER_ADDRESSES[1]], uploadedAt: makeUploaded(2), expiresAt: makeExpires(10) },
-    { id: 'sandbox-2', name: 'backup-db.sql.gz', size: 156_000_000, replicationCount: 3, durationMonths: 6, providers: MOCK_PROVIDER_ADDRESSES.slice(), uploadedAt: makeUploaded(1), expiresAt: makeExpires(5) },
-    { id: 'sandbox-3', name: 'presentation.odp', size: 8_500_000, replicationCount: 1, durationMonths: 3, providers: [MOCK_PROVIDER_ADDRESSES[2]], uploadedAt: makeUploaded(0), expiresAt: makeExpires(3) },
-    { id: 'sandbox-4', name: 'medias-archive.zip', size: 1_200_000_000, replicationCount: 2, durationMonths: 12, providers: [MOCK_PROVIDER_ADDRESSES[0], MOCK_PROVIDER_ADDRESSES[2]], uploadedAt: makeUploaded(4), expiresAt: makeExpires(8) },
-    { id: 'sandbox-5', name: 'config.env.example', size: 1024, replicationCount: 1, durationMonths: 1, providers: [MOCK_PROVIDER_ADDRESSES[1]], uploadedAt: makeUploaded(2), expiresAt: makeExpires(-1) }, // expiré
-  ]
-}

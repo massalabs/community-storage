@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
-import { getConfig, getStorageProviders, isSandboxMode } from '../contract/storageRegistryApi'
+import { getConfig, getStorageProviders, getContractAddress } from '../contract/storageRegistryApi'
 import { addStoredFiles } from '../lib/myFilesStorage'
 import { checkProviderUp } from '../lib/providerHealth'
 import { uploadFileToProviders } from '../lib/uploadToProvider'
+import { getBlocklistSet } from '../lib/blocklistStorage'
 
 function toNum(v) {
   return typeof v === 'bigint' ? Number(v) : v
@@ -22,6 +23,15 @@ function truncateAddress(addr) {
   return `${addr.slice(0, 8)}…${addr.slice(-8)}`
 }
 
+function CopyIcon({ className = '', ...props }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  )
+}
+
 const DURATION_OPTIONS = [
   { value: 1, label: '1 mois' },
   { value: 3, label: '3 mois' },
@@ -31,26 +41,20 @@ const DURATION_OPTIONS = [
 
 export function StoreFiles() {
   const navigate = useNavigate()
-  const { connected, account } = useWallet()
+  const { connected, account, address } = useWallet()
   const [config, setConfig] = useState(null)
   const [providers, setProviders] = useState([])
   const [loadingProviders, setLoadingProviders] = useState(true)
   const [files, setFiles] = useState([]) // File[]
   const [replicationCount, setReplicationCount] = useState(1)
   const [durationMonths, setDurationMonths] = useState(1)
-  const [selectedProviders, setSelectedProviders] = useState([])
   const [isDragging, setIsDragging] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [storing, setStoring] = useState(false)
   const [storeError, setStoreError] = useState(null)
   const [providersError, setProvidersError] = useState(null)
   const [providerStatus, setProviderStatus] = useState({})
-
-  // Quand on baisse le nombre de réplications, on garde seulement les N premiers sélectionnés
-  const setReplicationCountAndTrim = useCallback((n) => {
-    setReplicationCount(n)
-    setSelectedProviders((prev) => prev.slice(0, n))
-  }, [])
+  const [copiedAddress, setCopiedAddress] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -99,6 +103,24 @@ export function StoreFiles() {
     return () => { cancelled = true }
   }, [providers])
 
+  const blocklistSet = useMemo(() => getBlocklistSet(address), [address])
+
+  const eligibleProviders = useMemo(() => {
+    return providers.filter(
+      (p) =>
+        !blocklistSet.has((p.address || '').toLowerCase()) &&
+        p.endpoint &&
+        Number(p.availableGb ?? p.allocatedGb ?? 0) > 0
+    )
+  }, [providers, blocklistSet])
+
+  const autoSelectedProviders = useMemo(() => {
+    const sorted = [...eligibleProviders].sort(
+      (a, b) => Number((b.availableGb ?? 0n) - (a.availableGb ?? 0n))
+    )
+    return sorted.slice(0, replicationCount).map((p) => p.address)
+  }, [eligibleProviders, replicationCount])
+
   const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0)
   const totalGb = totalBytes / 1e9
   // Tarif fixe pour l’estimation : 1 MAS / mois pour ~2 Mo (500e9 nanoMAS/GB/mois)
@@ -136,24 +158,21 @@ export function StoreFiles() {
 
   const removeFile = useCallback((index) => {
     setFiles((prev) => prev.filter((_, i) => i !== index))
-    if (files.length <= 1) setSelectedProviders([])
-  }, [files.length])
+  }, [])
 
   const clearAllFiles = useCallback(() => {
     setFiles([])
-    setSelectedProviders([])
   }, [])
 
   const handleConfirmStore = useCallback(async () => {
-    if (!files.length || selectedProviders.length !== replicationCount) return
-    const sandbox = isSandboxMode()
-    if (!sandbox && (!connected || !account || typeof account.transfer !== 'function')) {
+    if (!files.length || autoSelectedProviders.length < replicationCount) return
+    if (!connected || !account || typeof account.transfer !== 'function') {
       setStoreError('Connectez votre wallet pour payer les providers en MAS (buildnet).')
       return
     }
     setStoreError(null)
     const totalToPay = BigInt(Math.ceil(priceNano))
-    if (!sandbox && totalToPay > 0n && account && typeof account.balance === 'function') {
+    if (totalToPay > 0n && account && typeof account.balance === 'function') {
       try {
         const balance = await account.balance(true)
         if (balance != null && balance < totalToPay) {
@@ -170,7 +189,7 @@ export function StoreFiles() {
     const now = new Date()
     const expires = new Date(now)
     expires.setMonth(expires.getMonth() + durationMonths)
-    const providerEndpoints = selectedProviders
+    const providerEndpoints = autoSelectedProviders
       .map((addr) => providers.find((p) => p.address === addr)?.endpoint)
       .filter(Boolean)
 
@@ -180,15 +199,15 @@ export function StoreFiles() {
       size: f.size,
       replicationCount,
       durationMonths,
-      providers: [...selectedProviders],
+      providers: [...autoSelectedProviders],
       providerEndpoints: providerEndpoints.length ? providerEndpoints : undefined,
       uploadedAt: now.toISOString(),
       expiresAt: expires.toISOString(),
     }))
 
     // 1. D'abord envoyer le fichier aux providers ; on ne prélève les MAS qu'après succès
-    let uploadOk = sandbox
-    if (!sandbox && providerEndpoints.length > 0) {
+    let uploadOk = false
+    if (providerEndpoints.length > 0) {
       const uploadResults = []
       for (let i = 0; i < files.length; i++) {
         const { succeeded, failed } = await uploadFileToProviders(
@@ -216,15 +235,13 @@ export function StoreFiles() {
       }
     }
 
-    // 2. En mode réel : payer chaque provider seulement après envoi réussi
-    if (uploadOk && !sandbox && priceNano > 0 && selectedProviders.length > 0) {
+    // 2. En mode réel : envoyer le paiement au smart contract (pas aux providers)
+    if (uploadOk && priceNano > 0 && autoSelectedProviders.length > 0) {
       const totalNano = BigInt(Math.ceil(priceNano))
-      const perProviderNano = totalNano / BigInt(selectedProviders.length)
-      if (perProviderNano > 0n) {
+      if (totalNano > 0n) {
         try {
-          await Promise.all(
-            selectedProviders.map((addr) => account.transfer(addr, perProviderNano))
-          )
+          const contractAddress = getContractAddress()
+          await account.transfer(contractAddress, totalNano)
         } catch (e) {
           setStoreError(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
           setStoring(false)
@@ -239,33 +256,16 @@ export function StoreFiles() {
     setStoreError(null)
     clearAllFiles()
     navigate('/my-files')
-  }, [files, selectedProviders, replicationCount, durationMonths, providers, priceNano, connected, account, clearAllFiles, navigate])
+  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, connected, account, clearAllFiles, navigate])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 
-  const toggleProvider = useCallback((address) => {
-    setSelectedProviders((prev) => {
-      const idx = prev.indexOf(address)
-      if (idx >= 0) return prev.filter((a) => a !== address)
-      if (prev.length >= replicationCount) return prev
-      return [...prev, address]
-    })
-  }, [replicationCount])
-
-  const removeFromSlot = useCallback((index) => {
-    setSelectedProviders((prev) => prev.filter((_, i) => i !== index))
-  }, [])
-
-  const getReplicationIndex = (address) => {
-    const idx = selectedProviders.indexOf(address)
-    return idx >= 0 ? idx + 1 : null
-  }
-  const isProviderSelected = (address) => selectedProviders.includes(address)
-  const canSelectMore = selectedProviders.length < replicationCount
   const hasFiles = files.length > 0
-  const selectionComplete = hasFiles && selectedProviders.length === replicationCount
-  const sandbox = isSandboxMode()
-  const canStore = selectionComplete && !storing && (sandbox || connected)
+  const canStore =
+    hasFiles &&
+    !storing &&
+    autoSelectedProviders.length >= replicationCount &&
+    connected
 
   return (
     <div className="space-y-10">
@@ -273,7 +273,7 @@ export function StoreFiles() {
         <div className="border-l-2 border-accent pl-6">
           <h1 className="font-mono text-2xl font-semibold tracking-tight text-white sm:text-3xl">Upload</h1>
           <p className="mt-2 font-mono text-sm uppercase tracking-wide text-zinc-500">
-            Déposez vos fichiers, réplications, durée, providers — puis validez.
+            Déposez vos fichiers ; les providers sont choisis automatiquement (hors blocklist).
           </p>
         </div>
       </div>
@@ -313,7 +313,7 @@ export function StoreFiles() {
                 <h3 className="text-sm font-semibold text-zinc-300">Fichiers ({files.length})</h3>
                 <button type="button" onClick={clearAllFiles} className="text-sm text-zinc-500 hover:text-red-400">Tout retirer</button>
               </div>
-              <ul className="max-h-32 space-y-2 overflow-y-auto">
+              <ul className="scrollbar-app max-h-32 space-y-2 overflow-y-auto">
                 {files.map((f, i) => (
                   <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 border border-line bg-white/5 px-3 py-2 text-sm">
                     <span className="truncate text-zinc-200" title={f.name}>{f.name}</span>
@@ -330,7 +330,7 @@ export function StoreFiles() {
                 </label>
                 <select
                   value={replicationCount}
-                  onChange={(e) => setReplicationCountAndTrim(Number(e.target.value))}
+                  onChange={(e) => setReplicationCount(Number(e.target.value))}
                   className="w-full border border-line bg-surface px-4 py-2 text-white focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent [color-scheme:dark]"
                 >
                   {replicationOptions.map((n) => (
@@ -338,7 +338,7 @@ export function StoreFiles() {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Choisissez {replicationCount} provider(s) dans la liste à droite — cliquez sur une carte pour l’assigner à une réplication.
+                  Les providers sont choisis automatiquement (espace dispo + endpoint, hors blocklist). l’assigner à une réplication.
                 </p>
               </div>
 
@@ -357,8 +357,12 @@ export function StoreFiles() {
                   {DURATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              <p className="text-xs text-zinc-500">Choisissez {replicationCount} provider(s) à droite, puis Storer.</p>
-              {!sandbox && !connected && (
+              {hasFiles && autoSelectedProviders.length < replicationCount && (
+                <p className="text-sm text-amber-400/90">
+                  Pas assez de providers éligibles ({autoSelectedProviders.length} / {replicationCount}). Réduisez la blocklist ou le nombre de réplications.
+                </p>
+              )}
+              {!connected && (
                 <p className="text-sm text-amber-400/90">Connectez votre wallet (buildnet) pour payer en MAS et storer.</p>
               )}
               <button type="button" onClick={() => setConfirmOpen(true)} disabled={!canStore} className="w-full border border-line bg-surface text-accent hover:border-accent py-3 text-sm font-semibold text-white hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed">Storer</button>
@@ -366,53 +370,34 @@ export function StoreFiles() {
           )}
         </section>
 
-        {/* Slots de réplication + liste providers en cartes */}
+        {/* Providers auto + blocklist + liste */}
         <section className="space-y-5">
           {hasFiles && (
             <div className="card-panel p-4">
-              <h3 className="text-sm font-semibold text-zinc-300 mb-3">Vos réplications</h3>
+              <h3 className="text-sm font-semibold text-zinc-300 mb-3">Providers choisis automatiquement</h3>
               <p className="text-xs text-zinc-500 mb-3">
-                Cliquez sur un provider dans la liste ci-dessous pour l’assigner à une réplication. Cliquez à nouveau ou sur × pour retirer.
+                Sélection parmi les providers avec espace dispo et endpoint (hors blocklist). l’assigner à une réplication. Cliquez à nouveau ou sur × pour retirer.
               </p>
-              <ul className="space-y-2">
-                {Array.from({ length: replicationCount }, (_, i) => {
-                  const addr = selectedProviders[i]
-                  return (
-                    <li
-                      key={i}
-                      className="flex items-center justify-between gap-2 border border-line bg-white/5 px-3 py-2"
-                    >
-                      <span className="text-sm font-medium text-zinc-500">Réplication {i + 1}</span>
-                      {addr ? (
-                        <>
-                          <span className="font-mono text-sm text-zinc-200 truncate flex-1 text-center" title={addr}>
-                            {truncateAddress(addr)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeFromSlot(i)}
-                            className="shrink-0 rounded p-1 text-zinc-500 hover:bg-surface hover:text-red-400 transition"
-                            aria-label="Retirer ce provider"
-                          >
-                            ×
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-sm text-zinc-500 italic flex-1 text-center">— Choisir un provider</span>
-                      )}
+              {autoSelectedProviders.length >= replicationCount ? (
+                <ul className="space-y-1.5 font-mono text-sm text-zinc-300">
+                  {autoSelectedProviders.map((addr, i) => (
+                    <li key={addr} className="flex items-center gap-2">
+                      <span className="text-zinc-500">{i + 1}.</span>
+                      <span title={addr}>{truncateAddress(addr)}</span>
+                      {providerStatus[addr] === 'up' && <span className="text-xs text-emerald-500">Up</span>}
                     </li>
-                  )
-                })}
-              </ul>
-              {selectionComplete && (
-                <p className="mt-3 text-xs text-accent font-medium">
-                  Sélection complète — prêt pour le stockage.
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-amber-400/90">
+                  Pas assez de providers éligibles ({autoSelectedProviders.length} / {replicationCount}). Réduisez la blocklist ou le nombre de réplications.
                 </p>
               )}
             </div>
           )}
+
           <div>
-            <h2 className="mb-3 text-lg font-semibold text-zinc-200">Providers de stockage</h2>
+            <h2 className="mb-3 text-lg font-semibold text-zinc-200">Tous les providers</h2>
             {loadingProviders ? (
               <div className="flex items-center gap-3 text-zinc-500">
                 <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -428,60 +413,68 @@ export function StoreFiles() {
               </div>
             ) : providers.length === 0 ? (
               <div className="card-panel p-6 text-zinc-500">
-                <p>{isSandboxMode() ? 'Aucun provider listé pour le moment.' : 'Aucun provider enregistré sur le contrat (buildnet).'}</p>
+                <p>Aucun provider enregistré sur le contrat (buildnet).</p>
                 <p className="mt-1 text-sm text-zinc-500">
-                  {isSandboxMode()
-                    ? 'En mode bac à sable, une liste fictive est affichée.'
-                    : 'Enregistrez des nœuds de stockage via le contrat pour qu\'ils apparaissent ici.'}
+                  Enregistrez des nœuds de stockage via le contrat pour qu'ils apparaissent ici.
                 </p>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 max-h-[320px] overflow-y-auto pr-1">
+              <div className="scrollbar-app grid gap-3 sm:grid-cols-2 max-h-[420px] overflow-y-auto pr-1">
                 {providers.map((p) => {
-                  const selected = isProviderSelected(p.address)
-                  const repIndex = getReplicationIndex(p.address)
-                  const disabled = !selected && !canSelectMore
+                  const blocked = blocklistSet.has((p.address || '').toLowerCase())
                   return (
-                    <button
+                    <div
                       key={p.address}
-                      type="button"
-                      onClick={hasFiles && !disabled ? () => toggleProvider(p.address) : undefined}
-                      disabled={hasFiles ? disabled : true}
-                      className={`card-panel p-4 text-left transition ${
-                        selected
-                          ? 'border-accent ring-2 ring-accent/50 text-accent hover:border-accent/80'
-                          : 'border-line hover:bg-white/5'
-                      } ${hasFiles && !disabled ? 'cursor-pointer' : 'cursor-default opacity-70'}`}
+                      className={`card-panel p-4 text-left ${blocked ? 'opacity-60 bg-red-500/5 border-red-500/20' : ''}`}
                     >
-                      {selected && repIndex && (
-                        <span className="inline-block mb-2 rounded border border-line bg-surface text-accent hover:border-accent/20 px-2 py-0.5 text-xs font-semibold text-accent">
-                          Réplication {repIndex}
-                        </span>
-                      )}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-mono text-sm font-medium text-zinc-200 truncate" title={p.address}>
+                        <p className="font-mono text-sm font-medium text-zinc-200 truncate min-w-0" title={p.address}>
                           {truncateAddress(p.address)}
                         </p>
-                        {p.endpoint ? (
-                          providerStatus[p.address] === 'checking' ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
-                              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-zinc-500" />
-                              Vérif…
-                            </span>
-                          ) : providerStatus[p.address] === 'up' ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-emerald-500" title="Endpoint joignable">
-                              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                              Up
-                            </span>
-                          ) : providerStatus[p.address] === 'down' ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-red-400/90" title="Endpoint injoignable ou timeout">
-                              <span className="inline-block h-2 w-2 rounded-full bg-red-400" />
-                              Down
-                            </span>
-                          ) : null
-                        ) : (
-                          <span className="text-xs text-zinc-600">—</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(p.address)
+                            setCopiedAddress(p.address)
+                            setTimeout(() => setCopiedAddress(null), 2000)
+                          }}
+                          className="shrink-0 p-1.5 text-zinc-500 hover:text-accent transition-colors rounded"
+                          title="Copier l'adresse"
+                          aria-label="Copier l'adresse"
+                        >
+                          <CopyIcon className="w-4 h-4" />
+                        </button>
+                        {copiedAddress === p.address && (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-500">
+                            Copié <span aria-hidden>✓</span>
+                          </span>
                         )}
+                        {blocked && (
+                          <span className="shrink-0 rounded border border-red-400/50 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-400/90">
+                            Exclu
+                          </span>
+                        )}
+                        {!blocked && p.endpoint && (
+                          <>
+                            {providerStatus[p.address] === 'checking' ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+                                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-zinc-500" />
+                                Vérif…
+                              </span>
+                            ) : providerStatus[p.address] === 'up' ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-500" title="Endpoint joignable">
+                                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                                Up
+                              </span>
+                            ) : providerStatus[p.address] === 'down' ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-red-400/90" title="Endpoint injoignable ou timeout">
+                                <span className="inline-block h-2 w-2 rounded-full bg-red-400" />
+                                Down
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                        {!blocked && !p.endpoint && <span className="text-xs text-zinc-600">—</span>}
                       </div>
                       <div className="mt-2 flex justify-between text-xs text-zinc-500">
                         <span>Alloué {toNum(p.allocatedGb)} GB</span>
@@ -497,7 +490,7 @@ export function StoreFiles() {
                           )}
                         </div>
                       )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -518,7 +511,7 @@ export function StoreFiles() {
             )}
             <div className="mt-4 space-y-3 text-sm">
               <p className="text-zinc-300"><strong>Fichiers :</strong> {files.length}</p>
-              <ul className="max-h-24 overflow-y-auto border border-line bg-white/5 p-2 text-zinc-500">
+              <ul className="scrollbar-app max-h-24 overflow-y-auto border border-line bg-white/5 p-2 text-zinc-500">
                 {files.map((f, i) => (
                   <li key={i} className="truncate">{f.name} — {formatBytes(f.size)}</li>
                 ))}
@@ -527,13 +520,13 @@ export function StoreFiles() {
               <p className="text-zinc-300"><strong>Durée :</strong> {durationMonths} mois</p>
               <p className="text-zinc-300"><strong>Providers :</strong></p>
               <ul className="text-zinc-500 font-mono text-xs">
-                {selectedProviders.map((addr, i) => (
+                {autoSelectedProviders.map((addr, i) => (
                   <li key={i}>{i + 1}. {truncateAddress(addr)}</li>
                 ))}
               </ul>
               <p className="border-t border-line pt-3 text-accent font-semibold">Total : {priceMas.toFixed(4)} MAS</p>
-              {!sandbox && priceNano > 0 && (
-                <p className="text-xs text-zinc-500">Ce montant sera envoyé depuis votre wallet aux providers (buildnet), puis les fichiers seront uploadés.</p>
+              {priceNano > 0 && (
+                <p className="text-xs text-zinc-500">Ce montant sera envoyé au smart contract (buildnet), puis les fichiers seront uploadés vers les providers choisis.</p>
               )}
             </div>
             <div className="mt-6 flex gap-3">

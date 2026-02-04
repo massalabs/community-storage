@@ -2,12 +2,9 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
-import { isSandboxMode, setSandboxMode } from '../contract/storageRegistryApi'
 import { FloatingFileIcons } from './FloatingFileIcons'
-import { SandboxBanner } from './SandboxBanner'
 import { SnakeTrails } from './SnakeTrail'
 import { SonarDots } from './SonarDots'
-import { SandboxOnly } from './SandboxOnly'
 
 function truncateAddress(addr) {
   if (!addr || addr.length < 12) return addr
@@ -45,9 +42,6 @@ export function Layout({ children }) {
   } = useWallet()
   const location = useLocation()
   const pathname = location?.pathname ?? '/'
-  const adminAddress = (import.meta.env.VITE_ADMIN_ADDRESS || 'AU12KpB8wn2Sr3tE3TbtUZ4V1ouGjRmVcmcb6FqfgkM1kUZZPaWLV').trim()
-  const isAdmin = !!adminAddress && connected && (address?.toLowerCase() === adminAddress?.toLowerCase())
-
   function getAccountLabel(account) {
     return account?.accountName ?? account?.nickname ?? truncateAddress(account?.address) ?? 'Compte'
   }
@@ -75,52 +69,31 @@ export function Layout({ children }) {
     return () => { cancelled = true }
   }, [accountPickerOpen, availableAccounts])
 
-  const sandbox = isSandboxMode()
-  const showModeToggle = import.meta.env.DEV
-
   return (
     <div className="relative min-h-screen grid-bg bg-bg text-zinc-100">
       <FloatingFileIcons />
       <SnakeTrails />
       <SonarDots />
       <div className="relative z-10">
-      {sandbox && <SandboxBanner />}
-      {showModeToggle && !sandbox && (
-        <div className="border-b border-line border-l-2 border-l-emerald-500/80 bg-emerald-500/10 px-6 py-2 text-center font-mono text-xs uppercase tracking-wide text-emerald-400/90">
-          Mode réel — Buildnet
-        </div>
-      )}
       <header className="glass-panel border-b border-line">
         <div className="mx-auto flex max-w-content items-center justify-between gap-grid px-6 py-4">
           <Link
             to="/"
-            className="font-mono text-2xl font-semibold tracking-tight text-white hover:text-accent transition-colors sm:text-3xl"
+            className="flex items-center gap-3 font-mono text-2xl font-light tracking-tight text-white hover:text-accent transition-colors sm:text-3xl"
           >
-            MASSA STORAGE
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="currentColor" className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" aria-hidden>
+              <circle cx="15" cy="3" r="2"/><circle cx="21" cy="3" r="2"/><circle cx="27" cy="3" r="2"/><circle cx="33" cy="3" r="2"/><circle cx="39" cy="3" r="2"/>
+              <circle cx="9" cy="9" r="2"/><circle cx="15" cy="9" r="2"/><circle cx="21" cy="9" r="2"/><circle cx="27" cy="9" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="39" cy="9" r="2"/><circle cx="45" cy="9" r="2"/>
+              <circle cx="3" cy="15" r="2"/><circle cx="9" cy="15" r="2"/><circle cx="15" cy="15" r="2"/><circle cx="21" cy="15" r="2"/><circle cx="27" cy="15" r="2"/><circle cx="33" cy="15" r="2"/><circle cx="39" cy="15" r="2"/><circle cx="45" cy="15" r="2"/>
+              <circle cx="3" cy="21" r="2"/><circle cx="9" cy="21" r="2"/><circle cx="15" cy="21" r="2"/><circle cx="21" cy="21" r="2"/><circle cx="27" cy="21" r="2"/><circle cx="33" cy="21" r="2"/><circle cx="39" cy="21" r="2"/><circle cx="45" cy="21" r="2"/>
+              <circle cx="3" cy="27" r="2"/><circle cx="9" cy="27" r="2"/><circle cx="15" cy="27" r="2"/><circle cx="21" cy="27" r="2"/><circle cx="27" cy="27" r="2"/><circle cx="33" cy="27" r="2"/><circle cx="39" cy="27" r="2"/><circle cx="45" cy="27" r="2"/>
+              <circle cx="3" cy="33" r="2"/><circle cx="9" cy="33" r="2"/><circle cx="15" cy="33" r="2"/><circle cx="21" cy="33" r="2"/><circle cx="27" cy="33" r="2"/><circle cx="33" cy="33" r="2"/><circle cx="39" cy="33" r="2"/><circle cx="45" cy="33" r="2"/>
+              <circle cx="3" cy="39" r="2"/><circle cx="9" cy="39" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="21" cy="39" r="2"/><circle cx="27" cy="39" r="2"/><circle cx="33" cy="39" r="2"/><circle cx="39" cy="39" r="2"/><circle cx="45" cy="39" r="2"/>
+              <circle cx="3" cy="45" r="2"/><circle cx="9" cy="45" r="2"/><circle cx="15" cy="45" r="2"/><circle cx="21" cy="45" r="2"/><circle cx="27" cy="45" r="2"/><circle cx="33" cy="45" r="2"/><circle cx="39" cy="45" r="2"/><circle cx="45" cy="45" r="2"/>
+            </svg>
+            <span>Massa Storage</span>
           </Link>
           <nav className="flex items-center gap-6 font-mono text-base">
-            {showModeToggle && (
-              <>
-                <div className="flex items-center gap-1 uppercase tracking-wide text-zinc-500">
-                  <button
-                    type="button"
-                    onClick={() => setSandboxMode(false)}
-                    className={`px-2 py-1 ${!sandbox ? 'text-accent' : 'hover:text-zinc-400'}`}
-                  >
-                    Réelles
-                  </button>
-                  <span className="vertical-sep mx-1" />
-                  <button
-                    type="button"
-                    onClick={() => setSandboxMode(true)}
-                    className={`px-2 py-1 ${sandbox ? 'text-accent' : 'hover:text-zinc-400'}`}
-                  >
-                    Bac à sable
-                  </button>
-                </div>
-                <span className="vertical-sep" />
-              </>
-            )}
             <Link
               to="/provide-storage"
               className={`uppercase tracking-wide transition-colors ${pathname === '/provide-storage' ? 'text-accent' : 'text-zinc-500 hover:text-zinc-300'}`}
@@ -133,28 +106,25 @@ export function Layout({ children }) {
             >
               My Files
             </Link>
-            <SandboxOnly>
-              <Link
-                to="/sandbox"
-                className={`uppercase tracking-wide transition-colors ${pathname === '/sandbox' ? 'text-accent' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Expériences
-              </Link>
-            </SandboxOnly>
-            {isAdmin && (
-              <Link
-                to="/admin"
-                className={`uppercase tracking-wide transition-colors ${pathname === '/admin' ? 'text-accent' : 'text-zinc-500 hover:text-zinc-300'}`}
-              >
-                Admin
-              </Link>
-            )}
             <span className="vertical-sep" />
             <Link
               to="/upload"
-              className={`font-medium uppercase tracking-wide transition-colors ${pathname === '/upload' ? 'text-accent' : 'text-zinc-400 hover:text-accent'}`}
+              className={`font-mono text-sm border border-line px-3 py-2 rounded font-medium uppercase tracking-wide transition-colors ${pathname === '/upload' ? 'text-accent border-accent' : 'text-zinc-400 hover:text-zinc-300 hover:border-zinc-400'}`}
             >
               Upload
+            </Link>
+            <div className="ml-auto flex items-center gap-3">
+            <Link
+              to="/settings"
+              className={`flex items-center justify-center p-2 rounded transition-colors ${pathname === '/settings' ? 'text-accent' : 'text-zinc-500 hover:text-accent'}`}
+              title="Settings"
+              aria-label="Settings"
+              aria-current={pathname === '/settings' ? 'page' : undefined}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
             </Link>
             {error && !connected && (
               <span className="text-base text-red-400/90" title={error}>{error.slice(0, 24)}…</span>
@@ -164,7 +134,7 @@ export function Layout({ children }) {
                 <button
                   type="button"
                   onClick={() => setWalletMenuOpen((o) => !o)}
-                  className="font-mono tabular-nums text-zinc-300 hover:text-accent transition-colors border border-white/[0.08] hover:border-line px-3 py-2 rounded"
+                  className="font-mono text-sm tabular-nums text-zinc-400 hover:text-zinc-300 transition-colors border border-line px-3 py-2 rounded"
                   title={address}
                 >
                   {getAccountLabel(account) || truncateAddress(address)}
@@ -177,7 +147,7 @@ export function Layout({ children }) {
                       onClick={() => setWalletMenuOpen(false)}
                     />
                     <div
-                      className="card-panel fixed right-6 top-[4.5rem] z-[99999] min-w-[220px] p-3"
+                      className="scrollbar-app card-panel fixed right-6 top-[4.5rem] z-[99999] min-w-[280px] max-w-[90vw] max-h-[85vh] overflow-y-auto p-3"
                       role="dialog"
                       aria-label="Menu wallet"
                     >
@@ -214,6 +184,7 @@ export function Layout({ children }) {
                       >
                         Changer de compte
                       </button>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -234,11 +205,12 @@ export function Layout({ children }) {
                 type="button"
                 onClick={openWalletPicker}
                 disabled={connecting}
-                className="font-mono border border-line bg-surface px-5 py-2.5 font-medium uppercase tracking-wide text-white hover:border-accent/50 hover:text-accent disabled:opacity-50 transition-colors"
+                className="font-mono text-sm border border-line px-3 py-2 rounded font-medium uppercase tracking-wide text-zinc-400 hover:text-zinc-300 hover:border-zinc-400 disabled:opacity-50 transition-colors"
               >
                 {connecting ? '…' : 'Connect wallet'}
               </button>
             )}
+            </div>
           </nav>
         </div>
       </header>

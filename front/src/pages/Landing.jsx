@@ -5,7 +5,6 @@ import {
   getCurrentPeriod,
   getPeriodStats,
   getStorageProviders,
-  isSandboxMode,
 } from '../contract/storageRegistryApi'
 
 function toNum(v) {
@@ -77,8 +76,8 @@ export function Landing() {
       <div className="mx-auto w-full max-w-4xl px-4">
         {/* Hero : titre + ligne + concept */}
         <div className="border-l-2 border-accent pl-8">
-          <h1 className="font-mono text-6xl font-semibold tracking-tight text-white sm:text-7xl md:text-8xl lg:text-9xl">
-            MASSA STORAGE
+          <h1 className="font-mono text-6xl font-light tracking-tight text-white sm:text-7xl md:text-8xl lg:text-9xl">
+            Massa Storage
           </h1>
           <div className="mt-8 h-px w-32 bg-line-strong" aria-hidden />
           <p className="mt-8 max-w-lg font-mono text-lg uppercase leading-relaxed tracking-wide text-zinc-500 sm:text-xl">
@@ -118,11 +117,9 @@ export function Landing() {
           <div className="mt-6 card-panel border-l-red-500/60 p-4">
             <p className="font-mono text-sm font-medium text-red-400/90">Erreur de chargement</p>
             <p className="mt-1 text-sm text-zinc-400">{error}</p>
-            {!isSandboxMode() && (
-              <p className="mt-2 text-xs text-zinc-500">
-                Mode réel — Vérifiez que le contrat est déployé sur le buildnet et que VITE_STORAGE_REGISTRY_ADDRESS est correct.
-              </p>
-            )}
+            <p className="mt-2 text-xs text-zinc-500">
+              Vérifiez que le contrat est déployé sur le buildnet et que VITE_STORAGE_REGISTRY_ADDRESS est correct.
+            </p>
           </div>
         )}
 
@@ -136,7 +133,7 @@ export function Landing() {
           </Link>
           <Link
             to="/provide-storage"
-            className="font-mono border border-line px-10 py-5 text-lg font-medium uppercase tracking-wide text-zinc-500 hover:border-line-strong hover:text-zinc-300 transition-colors"
+            className="card-panel font-mono border border-line px-10 py-5 text-lg font-medium uppercase tracking-wide text-zinc-500 hover:border-line-strong hover:text-zinc-300 transition-colors"
           >
             Provide Storage
           </Link>

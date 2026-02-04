@@ -5,7 +5,6 @@ import {
   getContractAddress,
   getConfig,
   getNodeInfo,
-  isSandboxMode,
 } from '../contract/storageRegistryApi'
 import { StatCard } from '../components/StatCard'
 
@@ -36,12 +35,11 @@ export function ProvideStorage() {
     setNodeInfo(info)
   }, [address])
 
-  const sandbox = isSandboxMode()
   const pendingNano = nodeInfo ? (typeof nodeInfo.pendingRewards === 'bigint' ? nodeInfo.pendingRewards : BigInt(nodeInfo.pendingRewards ?? 0)) : 0n
   const hasPendingRewards = pendingNano > 0n
 
   const handleClaim = useCallback(async () => {
-    if (sandbox || !account || !address || !hasPendingRewards) return
+    if (!account || !address || !hasPendingRewards) return
     if (typeof account.callSC !== 'function') {
       setClaimError('Ce wallet ne supporte pas l\'appel au contrat.')
       return
@@ -62,7 +60,7 @@ export function ProvideStorage() {
     } finally {
       setClaiming(false)
     }
-  }, [sandbox, account, address, hasPendingRewards, fetchNodeInfo])
+  }, [account, address, hasPendingRewards, fetchNodeInfo])
 
   useEffect(() => {
     if (!address) {
@@ -212,7 +210,7 @@ export function ProvideStorage() {
           <div className="card-panel p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Rewards available</p>
             <p className="mt-1 font-mono text-xl tabular-nums text-accent">{formatNanoMas(pendingRewards)}</p>
-            {hasPendingRewards && !sandbox && account && (
+            {hasPendingRewards && account && (
               <button
                 type="button"
                 onClick={handleClaim}
@@ -221,9 +219,6 @@ export function ProvideStorage() {
               >
                 {claiming ? 'Claim en cours…' : 'Claim'}
               </button>
-            )}
-            {hasPendingRewards && sandbox && (
-              <p className="mt-2 text-xs text-zinc-500">Claim désactivé en mode bac à sable.</p>
             )}
             {claimError && (
               <p className="mt-2 text-sm text-red-400">{claimError}</p>

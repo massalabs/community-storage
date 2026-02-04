@@ -134,7 +134,7 @@ export function Deposit() {
                 Clear all
               </button>
             </div>
-            <ul className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-lg border border-slate-600 bg-slate-800/50 p-3">
+            <ul className="scrollbar-app mt-3 max-h-60 space-y-2 overflow-y-auto rounded-lg border border-slate-600 bg-slate-800/50 p-3">
               {files.map((item, index) => (
                 <li
                   key={`${item.name}-${index}`}

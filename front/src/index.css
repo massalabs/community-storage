@@ -14,13 +14,107 @@
   --grid-size: 8px;
 }
 
+/* Light mode (doux, peu agressif) */
+[data-theme="light"] {
+  --bg: #eef0f4;
+  --surface: #f6f7f9;
+  --line: rgba(0, 0, 0, 0.06);
+  --line-strong: rgba(0, 0, 0, 0.09);
+  --accent: #0d9488;
+  --accent-dim: rgba(13, 148, 136, 0.1);
+  --text: #374151;
+  --text-muted: #6b7280;
+}
+
+[data-theme="light"] .glass-panel {
+  background: rgba(246, 247, 249, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .card-panel {
+  background: rgba(246, 247, 249, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+}
+
+[data-theme="light"] .glass-overlay {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="light"] .file-checkbox-box {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .file-checkbox-wrap:hover .file-checkbox-box {
+  background: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .file-checkbox-wrap input:checked + .file-checkbox-box {
+  background: var(--accent-dim);
+}
+
+[data-theme="light"] .scrollbar-app {
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .scrollbar-app:hover {
+  scrollbar-color: rgba(13, 148, 136, 0.4) rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .scrollbar-app::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .scrollbar-app::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .scrollbar-app::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+[data-theme="light"] .scrollbar-app::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Text / background overrides for light mode (Tailwind classes) – tons adoucis */
+[data-theme="light"] .text-white { color: var(--text) !important; }
+[data-theme="light"] .text-zinc-100 { color: var(--text) !important; }
+[data-theme="light"] .text-zinc-200 { color: #4b5563 !important; }
+[data-theme="light"] .text-zinc-300 { color: #6b7280 !important; }
+[data-theme="light"] .text-zinc-400 { color: var(--text-muted) !important; }
+[data-theme="light"] .text-zinc-500 { color: var(--text-muted) !important; }
+[data-theme="light"] .text-zinc-600 { color: #6b7280 !important; }
+[data-theme="light"] .bg-white\/5 { background-color: rgba(0, 0, 0, 0.03) !important; }
+[data-theme="light"] .bg-white\/10 { background-color: rgba(0, 0, 0, 0.05) !important; }
+[data-theme="light"] .bg-black\/20 { background-color: rgba(0, 0, 0, 0.08) !important; }
+[data-theme="light"] .bg-black\/60 { background-color: rgba(0, 0, 0, 0.4) !important; }
+[data-theme="light"] .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.06) !important; }
+[data-theme="light"] .hover\:text-zinc-300:hover { color: #4b5563 !important; }
+[data-theme="light"] .hover\:text-zinc-400:hover { color: #6b7280 !important; }
+[data-theme="light"] .hover\:border-zinc-400:hover { border-color: #9ca3af !important; }
+[data-theme="light"] .placeholder\:text-zinc-600::placeholder { color: #9ca3af !important; }
+[data-theme="light"] .text-red-400\/90 { color: #b91c1c !important; }
+[data-theme="light"] .bg-red-500\/10 { background-color: rgba(185, 28, 28, 0.08) !important; }
+[data-theme="light"] .bg-red-500\/5 { background-color: rgba(185, 28, 28, 0.05) !important; }
+[data-theme="light"] .border-red-500\/20 { border-color: rgba(185, 28, 28, 0.2) !important; }
+[data-theme="light"] .text-amber-400 { color: #b45309 !important; }
+[data-theme="light"] .text-amber-300 { color: #92400e !important; }
+[data-theme="light"] .text-emerald-500 { color: #047857 !important; }
+[data-theme="light"] .hover\:text-accent:hover { color: var(--accent) !important; }
+[data-theme="light"] .hover\:text-amber-300:hover { color: #92400e !important; }
+[data-theme="light"] .hover\:text-amber-400:hover { color: #b45309 !important; }
+[data-theme="light"] .hover\:text-white:hover { color: var(--text) !important; }
+[data-theme="light"] .border-amber-400\/50 { border-color: rgba(180, 83, 9, 0.4) !important; }
+[data-theme="light"] .hover\:border-amber-400:hover { border-color: #b45309 !important; }
+[data-theme="light"] .focus\:border-accent:focus { border-color: var(--accent) !important; }
+[data-theme="light"] .focus\:ring-accent:focus { box-shadow: 0 0 0 1px var(--accent) !important; }
+[data-theme="light"] input,
+[data-theme="light"] textarea,
+[data-theme="light"] select { color-scheme: light; }
+
 html, body, #root {
   min-height: 100vh;
   margin: 0;
 }
 
 body {
-  font-family: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-feature-settings: "tnum" 1;
@@ -193,6 +287,36 @@ body {
   border: solid var(--accent);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+}
+
+/* Barre de scroll au style de l'app (track sombre, thumb discret, accent au survol) */
+.scrollbar-app {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+}
+.scrollbar-app:hover {
+  scrollbar-color: rgba(0, 229, 255, 0.5) rgba(255, 255, 255, 0.05);
+}
+.scrollbar-app::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scrollbar-app::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+.scrollbar-app::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  border: 2px solid rgba(255, 255, 255, 0.03);
+}
+.scrollbar-app::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  opacity: 0.8;
+}
+.scrollbar-app::-webkit-scrollbar-corner {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
 }
 
 @layer base {

@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['DM Sans Variable', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Space Grotesk', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'monospace'],
       },
       colors: {

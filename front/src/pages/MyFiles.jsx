@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { getStoredFiles, extendStoredFiles, removeStoredFiles, getSandboxMockFiles } from '../lib/myFilesStorage'
-import { isSandboxMode } from '../contract/storageRegistryApi'
+import { getStoredFiles, extendStoredFiles, removeStoredFiles } from '../lib/myFilesStorage'
+import { getContractAddress } from '../contract/storageRegistryApi'
 import { downloadAndSaveFromProvider } from '../lib/downloadFromProvider'
 import { useWallet } from '../context/WalletContext'
 
@@ -60,7 +60,7 @@ function DownloadButton({ entry, formatBytes, className }) {
       if (!result.ok) setError(result.error)
       return
     }
-    // Fallback : fichier texte placeholder (démo / bac à sable sans uploadedTo)
+    // Fallback : fichier texte placeholder si pas d'uploadedTo
     const content = getDownloadContent(entry, formatBytes)
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -140,7 +140,6 @@ const EXTEND_OPTIONS = [
 ]
 
 export function MyFiles() {
-  const sandbox = isSandboxMode()
   const { connected, account } = useWallet()
   const [list, setList] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -148,21 +147,11 @@ export function MyFiles() {
   const [extendMonths, setExtendMonths] = useState(1)
   const [extendConfirm, setExtendConfirm] = useState(null)
   const [extendError, setExtendError] = useState(null)
-
-  const HIDDEN_MOCKS_KEY = 'massa-storage-hidden-mocks'
+  const [copiedEntryId, setCopiedEntryId] = useState(null)
 
   const load = useCallback(() => {
-    const stored = getStoredFiles()
-    let list = sandbox && stored.length === 0 ? getSandboxMockFiles() : stored
-    if (sandbox && stored.length === 0) {
-      try {
-        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
-        const hiddenIds = hidden ? JSON.parse(hidden) : []
-        list = list.filter((e) => !hiddenIds.includes(e.id))
-      } catch (_) {}
-    }
-    setList(list)
-  }, [sandbox])
+    setList(getStoredFiles())
+  }, [])
 
   useEffect(() => {
     load()
@@ -192,7 +181,7 @@ export function MyFiles() {
     const ids = [...selectedIds]
     const entries = entriesToExtend(ids)
     const { totalNano, byProvider } = computeExtendPayment(entries, extendMonths)
-    const needsPayment = !sandbox && totalNano > 0n && Object.keys(byProvider).length > 0
+    const needsPayment = totalNano > 0n && Object.keys(byProvider).length > 0
     if (needsPayment && connected && account) {
       setExtendError(null)
       setExtendConfirm({ ids, months: extendMonths, totalNano, byProvider })
@@ -211,17 +200,7 @@ export function MyFiles() {
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
-    const ids = [...selectedIds]
-    if (sandbox && getStoredFiles().length === 0) {
-      try {
-        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
-        const hiddenIds = hidden ? JSON.parse(hidden) : []
-        ids.forEach((id) => hiddenIds.push(id))
-        sessionStorage.setItem(HIDDEN_MOCKS_KEY, JSON.stringify(hiddenIds))
-      } catch (_) {}
-    } else {
-      removeStoredFiles(ids)
-    }
+    removeStoredFiles([...selectedIds])
     setSelectedIds(new Set())
     load()
   }
@@ -230,6 +209,8 @@ export function MyFiles() {
     const addrs = entry.providers?.filter(Boolean) || []
     if (addrs.length === 0) return
     navigator.clipboard?.writeText(addrs.length === 1 ? addrs[0] : addrs.join('\n'))
+    setCopiedEntryId(entry.id)
+    setTimeout(() => setCopiedEntryId(null), 2000)
   }
 
   const handleExtendOne = (id) => {
@@ -238,7 +219,7 @@ export function MyFiles() {
     const entries = [entry]
     const months = 1
     const { totalNano, byProvider } = computeExtendPayment(entries, months)
-    const needsPayment = !sandbox && totalNano > 0n && Object.keys(byProvider).length > 0
+    const needsPayment = totalNano > 0n && Object.keys(byProvider).length > 0
     if (needsPayment && connected && account) {
       setExtendError(null)
       setExtendConfirm({ ids: [id], months, totalNano, byProvider })
@@ -256,14 +237,13 @@ export function MyFiles() {
 
   const handleExtendConfirm = useCallback(async () => {
     if (!extendConfirm || !account) return
-    const { ids, months, byProvider } = extendConfirm
+    const { ids, months, totalNano } = extendConfirm
     setExtending(true)
     setExtendError(null)
     try {
-      const addrs = Object.keys(byProvider)
-      for (const addr of addrs) {
-        const amount = byProvider[addr]
-        if (amount > 0n) await account.transfer(addr, amount)
+      if (totalNano > 0n) {
+        const contractAddress = getContractAddress()
+        await account.transfer(contractAddress, totalNano)
       }
       extendStoredFiles(ids, months)
       setExtendConfirm(null)
@@ -282,16 +262,7 @@ export function MyFiles() {
   }, [])
 
   const handleDeleteOne = (id) => {
-    if (sandbox && getStoredFiles().length === 0) {
-      try {
-        const hidden = sessionStorage.getItem(HIDDEN_MOCKS_KEY)
-        const hiddenIds = hidden ? JSON.parse(hidden) : []
-        if (!hiddenIds.includes(id)) hiddenIds.push(id)
-        sessionStorage.setItem(HIDDEN_MOCKS_KEY, JSON.stringify(hiddenIds))
-      } catch (_) {}
-    } else {
-      removeStoredFiles([id])
-    }
+    removeStoredFiles([id])
     setSelectedIds((prev) => {
       const next = new Set(prev)
       next.delete(id)
@@ -460,6 +431,11 @@ export function MyFiles() {
                           >
                             <CopyIcon className="w-4 h-4" />
                           </button>
+                          {copiedEntryId === entry.id && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-500">
+                              Copié <span aria-hidden>✓</span>
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-zinc-500">—</span>
