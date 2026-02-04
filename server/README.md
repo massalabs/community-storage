@@ -21,7 +21,7 @@ Environment variables:
 - `STORAGE_REGISTRY_ADDRESS` — (optional) Storage registry contract address. With `MASSA_JSON_RPC`, enables upload auth.
 - `MASSA_JSON_RPC` — (optional) Massa JSON-RPC URL (e.g. `https://buildnet.massa.net/api/v2`). Required for upload auth.
 
-When both `STORAGE_REGISTRY_ADDRESS` and `MASSA_JSON_RPC` are set, **POST /upload** requires the client to sign the body (Blake3 + Ed25519) and send `X-Massa-Address`, `X-Massa-Signature`, `X-Massa-Public-Key`. The server verifies the signature and calls `getIsStorageAdmin(address)` on the registry; only storage admins can upload. Use the `upload-file` script with `PRIVATE_KEY` or `WALLET` set.
+When both `STORAGE_REGISTRY_ADDRESS` and `MASSA_JSON_RPC` are set, **POST /upload** requires auth (mode wallet uniquement) : le client envoie hex(Blake3(body)) au wallet pour signature, puis envoie `X-Massa-Address`, `X-Massa-Signature`, `X-Massa-Public-Key`. Le serveur vérifie la signature (Blake3(utf8(hex(Blake3(body)))) + Ed25519) et `getIsAllowedUploader(address)` sur le contrat ; seuls les uploaders enregistrés peuvent uploader. Utiliser le script `upload-file` avec `PRIVATE_KEY` ou `WALLET`, ou l’app front avec Bearby/Massa Station.
 
 ## API
 

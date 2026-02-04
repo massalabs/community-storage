@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../context/WalletContext'
-import { getConfig, getStorageProviders, getContractAddress } from '../contract/storageRegistryApi'
+import {
+  getConfig,
+  getStorageProviders,
+  getContractAddress,
+  getBookedUploaderGb,
+  getUploaderPricePerGb,
+  registerAsUploaderWithTransfer,
+} from '../contract/storageRegistryApi'
 import { addStoredFiles } from '../lib/myFilesStorage'
 import { checkProviderUp } from '../lib/providerHealth'
 import { uploadFileToProviders } from '../lib/uploadToProvider'
@@ -55,6 +62,8 @@ export function StoreFiles() {
   const [providersError, setProvidersError] = useState(null)
   const [providerStatus, setProviderStatus] = useState({})
   const [copiedAddress, setCopiedAddress] = useState(null)
+  /** Coût d'enregistrement uploader si nécessaire (needToBook en GB, bookingNano en nanoMAS) */
+  const [uploaderBooking, setUploaderBooking] = useState({ needToBook: 0n, bookingNano: 0n })
 
   useEffect(() => {
     let cancelled = false
@@ -79,6 +88,28 @@ export function StoreFiles() {
       .finally(() => { if (!cancelled) setLoadingProviders(false) })
     return () => { cancelled = true }
   }, [])
+
+  // Quand la modal de confirmation s'ouvre : calcul du coût d'enregistrement uploader (invisible pour l'utilisateur, inclus dans le total)
+  useEffect(() => {
+    if (!confirmOpen || !address || !files.length) {
+      setUploaderBooking({ needToBook: 0n, bookingNano: 0n })
+      return
+    }
+    let cancelled = false
+    const totalBytes = files.reduce((sum, f) => sum + (f.size || 0), 0)
+    const needBookingGb = BigInt(Math.max(1, Math.ceil(totalBytes / 1e9)))
+    Promise.all([getBookedUploaderGb(address), getUploaderPricePerGb()])
+      .then(([bookedGb, pricePerGb]) => {
+        if (cancelled) return
+        const needToBook = needBookingGb > bookedGb ? needBookingGb - bookedGb : 0n
+        const bookingNano = needToBook * pricePerGb
+        setUploaderBooking({ needToBook, bookingNano })
+      })
+      .catch(() => {
+        if (!cancelled) setUploaderBooking({ needToBook: 0n, bookingNano: 0n })
+      })
+    return () => { cancelled = true }
+  }, [confirmOpen, address, files])
 
   // Health check des providers (endpoint HTTP) pour afficher Up/Down
   useEffect(() => {
@@ -171,7 +202,8 @@ export function StoreFiles() {
       return
     }
     setStoreError(null)
-    const totalToPay = BigInt(Math.ceil(priceNano))
+    const storageNano = BigInt(Math.ceil(priceNano))
+    const totalToPay = uploaderBooking.bookingNano + storageNano
     if (totalToPay > 0n && account && typeof account.balance === 'function') {
       try {
         const balance = await account.balance(true)
@@ -193,6 +225,31 @@ export function StoreFiles() {
       .map((addr) => providers.find((p) => p.address === addr)?.endpoint)
       .filter(Boolean)
 
+    // 0. Enregistrement uploader si nécessaire (invisible : un seul total affiché)
+    if (uploaderBooking.needToBook > 0n) {
+      try {
+        if (typeof account.callSC !== 'function') {
+          setStoreError('Ce wallet ne supporte pas l\'enregistrement uploader (appel contrat avec paiement).')
+          setStoring(false)
+          return
+        }
+        await registerAsUploaderWithTransfer(account, uploaderBooking.needToBook)
+      } catch (e) {
+        setStoreError(e?.message ?? 'Enregistrement uploader échoué. Vérifiez votre solde et réessayez.')
+        setStoring(false)
+        return
+      }
+    }
+
+    // Le wallet (Bearby/Massa Station) retourne SignedData { signature, publicKey } ; pas de publicKey sur le compte.
+    const signer =
+      typeof account.sign === 'function' && address
+        ? {
+            address,
+            sign: (data) => Promise.resolve(account.sign(data)),
+          }
+        : null
+
     const entries = files.map((f) => ({
       id: crypto.randomUUID?.() ?? `f-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       name: f.name,
@@ -213,7 +270,8 @@ export function StoreFiles() {
         const { succeeded, failed } = await uploadFileToProviders(
           providerEndpoints,
           files[i],
-          entries[i].id
+          entries[i].id,
+          signer
         )
         uploadResults.push({ succeeded, failed })
         entries[i].uploadedTo = succeeded.length ? succeeded : undefined
@@ -235,18 +293,15 @@ export function StoreFiles() {
       }
     }
 
-    // 2. En mode réel : envoyer le paiement au smart contract (pas aux providers)
-    if (uploadOk && priceNano > 0 && autoSelectedProviders.length > 0) {
-      const totalNano = BigInt(Math.ceil(priceNano))
-      if (totalNano > 0n) {
-        try {
-          const contractAddress = getContractAddress()
-          await account.transfer(contractAddress, totalNano)
-        } catch (e) {
-          setStoreError(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
-          setStoring(false)
-          return
-        }
+    // 2. Paiement stockage au smart contract (l'enregistrement uploader a déjà été fait en étape 0)
+    if (uploadOk && storageNano > 0n && autoSelectedProviders.length > 0) {
+      try {
+        const contractAddress = getContractAddress()
+        await account.transfer(contractAddress, storageNano)
+      } catch (e) {
+        setStoreError(e?.message ?? 'Fichier(s) envoyé(s) mais paiement MAS refusé ou échoué. Vérifiez votre solde buildnet.')
+        setStoring(false)
+        return
       }
     }
 
@@ -256,7 +311,7 @@ export function StoreFiles() {
     setStoreError(null)
     clearAllFiles()
     navigate('/my-files')
-  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, connected, account, clearAllFiles, navigate])
+  }, [files, autoSelectedProviders, replicationCount, durationMonths, providers, priceNano, uploaderBooking, connected, account, clearAllFiles, navigate])
 
   const replicationOptions = Array.from({ length: 10 }, (_, i) => i + 1)
 
@@ -524,9 +579,14 @@ export function StoreFiles() {
                   <li key={i}>{i + 1}. {truncateAddress(addr)}</li>
                 ))}
               </ul>
-              <p className="border-t border-line pt-3 text-accent font-semibold">Total : {priceMas.toFixed(4)} MAS</p>
-              {priceNano > 0 && (
-                <p className="text-xs text-zinc-500">Ce montant sera envoyé au smart contract (buildnet), puis les fichiers seront uploadés vers les providers choisis.</p>
+              <p className="border-t border-line pt-3 text-accent font-semibold">
+                Total : {((Number(uploaderBooking.bookingNano) + priceNano) / 1e9).toFixed(4)} MAS
+              </p>
+              {(uploaderBooking.bookingNano > 0n || priceNano > 0) && (
+                <p className="text-xs text-zinc-500">
+                  {uploaderBooking.bookingNano > 0n ? 'Inclut l\'enregistrement uploader (réservation capacité). ' : ''}
+                  Envoyé au smart contract (buildnet) ; les fichiers sont signés et uploadés vers les providers.
+                </p>
               )}
             </div>
             <div className="mt-6 flex gap-3">

@@ -13,7 +13,7 @@ import {
 
 const CONTRACT_ADDRESS =
   import.meta.env.VITE_STORAGE_REGISTRY_ADDRESS ||
-  'AS12Ed8CD6YRANxeVW16wq6hs4Jq3nvuX9PAVpoWAo5Gt7S1fE3XU'
+  'AS1GCtj7QMCdcX6iCfKid41X8bDwprFenqSWEpPcxK4UiXdfcGHd'
 
 let provider = null
 let contract = null
@@ -165,6 +165,59 @@ export async function getRegisteredAddresses() {
     return Array.isArray(arr) ? arr : []
   } catch (_) {
     return []
+  }
+}
+
+/**
+ * Vérifie si une adresse est autorisée à uploader (admin ou a réservé du stockage).
+ * @param {string} address - Adresse Massa
+ * @returns {Promise<boolean>}
+ */
+export async function getIsAllowedUploader(address) {
+  try {
+    const sc = getContract()
+    const args = new Args().addString(address)
+    const res = await sc.read('getIsAllowedUploader', args)
+    if (res.info?.error || !res.value || res.value.length < 8) return false
+    const out = new Args(res.value)
+    const n = out.nextU64()
+    return n === 1n
+  } catch (_) {
+    return false
+  }
+}
+
+/**
+ * Nombre de GB réservés par une adresse (registerAsUploader).
+ * @param {string} address - Adresse Massa
+ * @returns {Promise<bigint>}
+ */
+export async function getBookedUploaderGb(address) {
+  try {
+    const sc = getContract()
+    const args = new Args().addString(address)
+    const res = await sc.read('getBookedUploaderGbView', args)
+    if (res.info?.error || !res.value || res.value.length < 8) return 0n
+    const out = new Args(res.value)
+    return out.nextU64()
+  } catch (_) {
+    return 0n
+  }
+}
+
+/**
+ * Prix par GB pour réserver en tant qu'uploader (nanoMAS).
+ * @returns {Promise<bigint>}
+ */
+export async function getUploaderPricePerGb() {
+  try {
+    const sc = getContract()
+    const res = await sc.read('getUploaderPricePerGbView', new Args())
+    if (res.info?.error || !res.value || res.value.length < 8) return 0n
+    const out = new Args(res.value)
+    return out.nextU64()
+  } catch (_) {
+    return 0n
   }
 }
 

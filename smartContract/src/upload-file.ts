@@ -2,12 +2,12 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { Account } from '@massalabs/massa-web3';
+import { blake3 } from '@noble/hashes/blake3';
 
 /**
  * Upload a file to a storage provider's HTTP API (POST /upload).
- * When the server requires auth, set PRIVATE_KEY (or WALLET) so the client signs the body
- * and sends X-Massa-Address, X-Massa-Signature, X-Massa-Public-Key. The server verifies
- * the signature and checks getIsStorageAdmin(address) on the storage registry contract.
+ * Mode wallet : on signe hex(Blake3(body)), le serveur vérifie Blake3(utf8(hex(Blake3(body)))).
+ * Set PRIVATE_KEY (or WALLET) for auth ; headers X-Massa-Address, X-Massa-Signature, X-Massa-Public-Key.
  *
  * Usage:
  *   npx tsx src/upload-file.ts <file-path>
@@ -92,13 +92,15 @@ async function main(): Promise<void> {
   }
 
   const account = await Account.fromEnv();
-  const signature = await account.sign(new Uint8Array(body));
+  const bodyHash = blake3(new Uint8Array(body));
+  const hashHex = Array.from(bodyHash)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const signature = await account.sign(new TextEncoder().encode(hashHex));
   headers['X-Massa-Address'] = account.address.toString();
   headers['X-Massa-Signature'] = signature.toString();
   headers['X-Massa-Public-Key'] = account.publicKey.toString();
   console.log('Signing as', account.address.toString());
-  console.log('Signature:', signature.toString());
-  console.log('Public Key:', account.publicKey.toString());
 
   console.log('Uploading to', url.toString());
   console.log('File:', resolved, 'size:', body.length, 'bytes');

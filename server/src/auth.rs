@@ -1,5 +1,5 @@
-//! Upload authentication: verify Massa signature (Blake3 hash of body + Ed25519).
-//! Compatible with @massalabs/massa-web3 Account.sign(message): message is hashed with Blake3 then signed.
+//! Upload authentication: verify Massa signature (mode wallet uniquement).
+//! Le client envoie hex(Blake3(body)) au wallet ; le wallet signe Blake3(utf8(hex)) ; on vérifie Ed25519 sur ce hash.
 
 use blake3::Hasher;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -75,8 +75,9 @@ fn base58_decode_versioned(encoded: &str, expected_tail_len: usize) -> Result<Ve
     Ok(raw)
 }
 
-/// Verify upload auth: body was signed by the given public key (Blake3(body) then Ed25519).
-/// Headers must contain X-Massa-Address, X-Massa-Signature, X-Massa-Public-Key.
+/// Verify upload auth: body was signed by the given public key (mode wallet uniquement).
+/// Le client envoie hex(Blake3(body)) au wallet ; le wallet signe Blake3(utf8(hex(Blake3(body)))).
+/// Headers requis : X-Massa-Address, X-Massa-Signature, X-Massa-Public-Key.
 pub fn verify_upload_signature(
     body: &[u8],
     massa_address: &str,
@@ -99,7 +100,11 @@ pub fn verify_upload_signature(
     .map_err(|_| AuthError::InvalidPublicKey)?;
     let signature = Signature::from_bytes(sig_bytes.as_slice().try_into().map_err(|_| AuthError::InvalidSignature)?);
 
-    let message_hash = blake3_hash(body);
+    // Mode wallet : client signe hex(Blake3(body)) → message signé = Blake3(utf8(hex(Blake3(body)))).
+    let body_hash = blake3_hash(body);
+    let hex_str: String = body_hash.iter().map(|b| format!("{:02x}", b)).collect();
+    let message_hash = blake3_hash(hex_str.as_bytes());
+
     verifying_key
         .verify(&message_hash, &signature)
         .map_err(|_| AuthError::VerificationFailed)?;
@@ -130,13 +135,14 @@ mod tests {
     fn verify_upload_signature_accepts_valid_signature() {
         let body = b"test-body";
 
-        // Deterministic signing key from fixed bytes (for reproducible tests).
         let secret = [7u8; 32];
         let signing_key = SigningKey::from_bytes(&secret);
         let verifying_key = signing_key.verifying_key();
 
-        // Sign the same Blake3 hash that verify_upload_signature will verify.
-        let message_hash = blake3_hash(body);
+        // Mode wallet : message signé = Blake3(utf8(hex(Blake3(body)))).
+        let body_hash = blake3_hash(body);
+        let hex_str: String = body_hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let message_hash = blake3_hash(hex_str.as_bytes());
         let signature = signing_key.sign(&message_hash);
 
         let public_key_b58 = encode_versioned_base58(&verifying_key.to_bytes());
@@ -159,12 +165,13 @@ mod tests {
         let signing_key = SigningKey::from_bytes(&secret);
         let verifying_key = signing_key.verifying_key();
 
-        let message_hash = blake3_hash(body);
+        let body_hash = blake3_hash(body);
+        let hex_str: String = body_hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let message_hash = blake3_hash(hex_str.as_bytes());
         let signature = signing_key.sign(&message_hash);
 
         let public_key_b58 = encode_versioned_base58(&verifying_key.to_bytes());
 
-        // Corrupt one byte of the signature so verification must fail.
         let mut sig_bytes = signature.to_bytes();
         sig_bytes[0] ^= 0x01;
         let bad_signature_b58 = encode_versioned_base58(&sig_bytes);
@@ -180,36 +187,5 @@ mod tests {
             Err(AuthError::VerificationFailed) => {}
             other => panic!("expected VerificationFailed, got {:?}", other),
         }
-    }
-
-    /// Hardcoded real upload: asconfig.json body signed by AU1JnimoipKyiUrowSLP93Q2Ugq43fbz9VJw9TczFFxxGcvj4ZYD.
-    /// Signature and public key from massa-web3 Account.sign(body) + toString().
-    #[test]
-    fn verify_upload_signature_hardcoded_asconfig_json() {
-        // Exact contents of smartContract/asconfig.json (body that was signed by upload-file.ts).
-        let body = br#"{
-    "targets": {
-        "release": {
-            "sourceMap": true,
-            "optimizeLevel": 3,
-            "shrinkLevel": 3,
-            "converge": true,
-            "noAssert": false,
-            "exportRuntime": true,
-            "bindings": false
-        }
-    }
-}
-"#;
-        let massa_address = "AU1JnimoipKyiUrowSLP93Q2Ugq43fbz9VJw9TczFFxxGcvj4ZYD";
-        let signature_b58 = "1GSs7y6o3Hyhs7UP31aMY9maVxP8QGYkehBvtf8Cch82VWHsWRjdqHSbP4vSDj845EsAUbX4cS8nTQyi7Yd2cUn2pP8MCP";
-        let public_key_b58 = "P12Wia8YFNbvGXYKk9aSSEaLJAJka4NnMjtJNPBDeKhvjGf9nzVN";
-
-        let res = verify_upload_signature(body, massa_address, signature_b58, public_key_b58);
-        assert!(
-            res.is_ok(),
-            "verify_upload_signature should accept hardcoded asconfig.json signature, got {:?}",
-            res
-        );
     }
 }
