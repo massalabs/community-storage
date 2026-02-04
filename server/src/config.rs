@@ -14,12 +14,21 @@ pub struct Config {
     /// libp2p listen address (multiaddr), e.g. `/ip4/0.0.0.0/tcp/0`.
     pub p2p_listen_addr: String,
     /// Optional Massa address identifying this storage provider.
-    /// Example: `AU1...` (bech32) or any canonical form you use in Massa.
     pub massa_address: Option<String>,
     /// Storage registry smart contract address (for upload auth: getIsAllowedUploader).
     pub storage_registry_address: String,
     /// Massa JSON-RPC URL (e.g. https://buildnet.massa.net/api/v2). Required for upload auth.
     pub massa_json_rpc: String,
+    /// Bootstrap peers to connect to on startup (comma-separated multiaddrs).
+    pub bootstrap_peers: Vec<String>,
+    /// Massa gRPC URL for write operations (e.g. `grpc://buildnet.massa.net:33037`).
+    pub massa_grpc_url: Option<String>,
+    /// Storage registry contract address.
+    pub contract_address: String,
+    /// Private key for signing transactions (optional, needed for P2P address registration).
+    pub private_key: Option<String>,
+    /// Public HTTP endpoint for this provider (registered in contract for other peers).
+    pub public_endpoint: Option<String>,
 }
 
 impl Config {
@@ -34,7 +43,8 @@ impl Config {
         let storage_path = std::env::var("STORAGE_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("./data"));
-        let bind_address = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:4343".to_string());
+        let bind_address = std::env::var("BIND_ADDRESS")
+            .unwrap_or_else(|_| "127.0.0.1:4343".to_string());
         let storage_limit_gb = std::env::var("STORAGE_LIMIT_GB")
             .expect("STORAGE_LIMIT_GB is required")
             .parse::<u64>()
@@ -46,6 +56,15 @@ impl Config {
             .expect("STORAGE_REGISTRY_ADDRESS is required for upload authentication");
         let massa_json_rpc = std::env::var("MASSA_JSON_RPC")
             .expect("MASSA_JSON_RPC is required for upload authentication");
+        let bootstrap_peers = std::env::var("BOOTSTRAP_PEERS")
+            .map(|s| s.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
+            .unwrap_or_default();
+        let massa_grpc_url = std::env::var("MASSA_GRPC_URL").ok();
+        let contract_address = std::env::var("CONTRACT_ADDRESS")
+            .unwrap_or_else(|_| "AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn".to_string());
+        let private_key = std::env::var("PRIVATE_KEY").ok();
+        let public_endpoint = std::env::var("PUBLIC_ENDPOINT").ok();
+
         Self {
             storage_path,
             bind_address,
@@ -54,6 +73,11 @@ impl Config {
             massa_address,
             storage_registry_address,
             massa_json_rpc,
+            bootstrap_peers,
+            massa_grpc_url,
+            contract_address,
+            private_key,
+            public_endpoint,
         }
     }
 }

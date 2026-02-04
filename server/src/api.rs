@@ -20,6 +20,7 @@ pub struct UploadAuthConfig {
     pub storage_registry_address: String,
     pub massa_json_rpc: String,
 }
+use crate::p2p::SharedP2pState;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +29,7 @@ pub struct AppState {
     pub upload_auth: Option<UploadAuthConfig>,
     /// Discovered P2P listen addresses (filtered to exclude localhost).
     pub p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>,
+    pub p2p_state: Option<SharedP2pState>,
 }
 
 /// Query for list: optional namespace filter.
@@ -255,6 +257,42 @@ pub async fn health() -> &'static str {
     "ok"
 }
 
+/// P2P peer info response
+#[derive(Debug, serde::Serialize)]
+pub struct PeersResponse {
+    pub local_peer_id: String,
+    pub listen_addrs: Vec<String>,
+    /// Full multiaddrs with peer ID (for contract registration)
+    pub multiaddrs: Vec<String>,
+    pub connected_peers: Vec<crate::p2p::PeerInfo>,
+}
+
+/// GET /peers — list connected P2P peers
+pub async fn peers(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    match &state.p2p_state {
+        Some(p2p) => {
+            let s = p2p.read().await;
+            let peer_id = s.local_peer_id.to_string();
+            let response = PeersResponse {
+                local_peer_id: peer_id.clone(),
+                listen_addrs: s.listen_addrs.iter().map(|a| a.to_string()).collect(),
+                multiaddrs: s
+                    .listen_addrs
+                    .iter()
+                    .map(|a| format!("{}/p2p/{}", a, peer_id))
+                    .collect(),
+                connected_peers: s.connected_peers.values().cloned().collect(),
+            };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "P2P not enabled" })),
+        )
+            .into_response(),
+    }
+}
+
 /// Storage limit and usage (for external clients).
 #[derive(Debug, serde::Serialize)]
 pub struct StorageConfigResponse {
@@ -308,15 +346,22 @@ pub async fn storage_config(
     }
 }
 
-pub fn router(storage: Storage, upload_auth: Option<UploadAuthConfig>, p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>) -> Router {
+pub fn router(
+    storage: Storage,
+    upload_auth: Option<UploadAuthConfig>,
+    p2p_listen_addrs: Arc<std::sync::RwLock<Vec<String>>>,
+    p2p_state: Option<SharedP2pState>,
+) -> Router {
     let state = Arc::new(AppState {
         storage,
         upload_auth,
         p2p_listen_addrs,
+        p2p_state,
     });
     Router::new()
         .route("/health", get(health))
         .route("/config", get(storage_config))
+        .route("/peers", get(peers))
         .route("/upload", post(upload))
         .route("/data", get(list))
         .route("/data/{id}", get(get_by_id))
