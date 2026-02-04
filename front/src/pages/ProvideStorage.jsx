@@ -235,6 +235,21 @@ export function ProvideStorage() {
     )
   }
 
+  const DOWNLOAD_SERVER_URL = 'https://github.com/massalabs/community-storage/actions/workflows/ci-server.yml'
+  const envExampleSnippet = `# Obligatoire
+STORAGE_LIMIT_GB=100
+STORAGE_REGISTRY_ADDRESS=AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn
+MASSA_JSON_RPC=https://buildnet.massa.net/api/v2
+
+# Votre adresse Massa (celle de ce wallet)
+MASSA_ADDRESS=${address || 'VOTRE_ADRESSE_MASSA'}
+
+# Optionnel
+BIND_ADDRESS=127.0.0.1:4343
+STORAGE_PATH=./data
+MASSA_GRPC_URL=grpc://buildnet.massa.net:33037
+RUST_LOG=info`
+
   if (!nodeInfo) {
     return (
       <div className="space-y-6">
@@ -242,23 +257,80 @@ export function ProvideStorage() {
         <p className="text-zinc-500">
           Vue d’ensemble de votre nœud de stockage — occupation, récompenses et statistiques.
         </p>
-        <div className="card-panel p-6 space-y-6">
-            <p className="font-medium text-white">Vous n'êtes pas enregistré comme nœud de stockage</p>
-            <p className="mt-2 text-sm text-zinc-500">
-              Enregistrez votre nœud pour allouer du stockage et gagner des récompenses MAS.
-            </p>
-            <p className="mt-2 text-sm text-zinc-500">
-              Adresse connectée : <span className="font-mono text-zinc-500">{address}</span>
-            </p>
-          </div>
 
-          {/* Registration Form */}
-          <div className="border-t border-line pt-6 space-y-4">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-              Enregistrer votre nœud
-            </h2>
-            
-            <div className="space-y-4">
+        <div className="card-panel p-6 space-y-3">
+          <p className="font-medium text-white">Vous n’êtes pas enregistré comme provider</p>
+          <p className="text-sm text-zinc-500">
+            Pour fournir du stockage et recevoir des récompenses MAS, suivez le tutoriel ci-dessous puis enregistrez votre nœud.
+          </p>
+          <p className="text-xs text-zinc-500">
+            Adresse connectée : <span className="font-mono text-zinc-400">{address}</span>
+          </p>
+        </div>
+
+        {/* Setup serveur : télécharger, dézipper, .env, lancer */}
+        <div className="card-panel p-6 space-y-4">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+            1. Télécharger le serveur
+          </h2>
+          <p className="text-sm text-zinc-400">
+            Récupérez le binaire du serveur depuis la dernière exécution du workflow CI (artifacts).
+          </p>
+          <a
+            href={DOWNLOAD_SERVER_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-line text-xs font-medium uppercase tracking-wide text-white hover:border-accent hover:text-accent"
+          >
+            Télécharger le serveur (GitHub Actions)
+            <span className="text-xs opacity-80">↗</span>
+          </a>
+          <p className="text-xs text-zinc-500">
+            Choisissez le dernier run réussi, puis téléchargez l’artifact correspondant à votre OS (linux-x64, windows-x64, macos-arm, etc.).
+          </p>
+
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mt-6">
+            2. Dézipper
+          </h2>
+          <p className="text-sm text-zinc-400">
+            Décompressez l’archive dans un dossier, puis ouvrez un terminal dans ce dossier.
+          </p>
+
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mt-6">
+            3. Fichier .env
+          </h2>
+          <p className="text-sm text-zinc-400">
+            Créez un fichier <code className="text-zinc-300">.env</code> à côté du binaire et remplissez-le ainsi (adaptez les valeurs) :
+          </p>
+          <pre className="p-4 bg-zinc-900 border border-line rounded text-xs text-zinc-300 overflow-x-auto whitespace-pre font-mono">
+            {envExampleSnippet}
+          </pre>
+
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 mt-6">
+            4. Lancer le serveur
+          </h2>
+          <p className="text-sm text-zinc-400">
+            Exécutez le binaire. Sous Windows : <code className="text-zinc-300">.\\massa-storage-server.exe</code>. Sous Linux/Mac : <code className="text-zinc-300">./massa-storage-server</code>.
+          </p>
+          <pre className="p-4 bg-zinc-900 border border-line rounded text-xs text-zinc-300 font-mono">
+            # Windows (PowerShell ou CMD)
+            .\massa-storage-server.exe
+
+            # Linux / macOS
+            ./massa-storage-server
+          </pre>
+          <p className="text-xs text-zinc-500">
+            Le serveur écoute par défaut sur <code className="text-zinc-400">http://127.0.0.1:4343</code>. Une fois lancé, revenez ici et enregistrez votre nœud avec l’URL du serveur ci‑dessous.
+          </p>
+        </div>
+
+        {/* Registration Form */}
+        <div className="border-t border-line pt-6 space-y-4">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+            Enregistrer votre nœud
+          </h2>
+
+          <div className="space-y-4">
               <div>
                 <label htmlFor="server-endpoint" className="block text-xs font-medium text-zinc-400 mb-2">
                   Adresse du serveur (IP ou URL)
