@@ -1,7 +1,33 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useState, useEffect } from 'react'
 import { getWallets } from '@massalabs/wallet-provider'
 
 const WalletContext = createContext(null)
+
+const STORAGE_KEY = 'massa-storage-wallet'
+
+function getStoredWallet() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw)
+    if (data?.walletName && data?.address) return data
+    return null
+  } catch {
+    return null
+  }
+}
+
+function setStoredWallet(walletName, address) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ walletName, address }))
+  } catch {}
+}
+
+function clearStoredWallet() {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {}
+}
 
 export function useWallet() {
   const ctx = useContext(WalletContext)
@@ -37,6 +63,45 @@ export function WalletProvider({ children }) {
   const [accountPickerOpen, setAccountPickerOpen] = useState(false)
   const [availableAccounts, setAvailableAccounts] = useState([])
   const [pendingWallet, setPendingWallet] = useState(null)
+
+  /** Restauration de la connexion au chargement (localStorage) */
+  useEffect(() => {
+    let cancelled = false
+    const stored = getStoredWallet()
+    if (!stored?.walletName || !stored?.address) return
+    async function restore() {
+      try {
+        const wallets = await getWallets()
+        if (cancelled || !wallets?.length) return
+        const walletName = stored.walletName.toUpperCase?.() ?? stored.walletName
+        const w = wallets.find((x) => {
+          try {
+            const n = (x?.name?.() ?? '').toUpperCase?.() ?? ''
+            return n === walletName || n.includes(walletName) || walletName.includes(n)
+          } catch {
+            return false
+          }
+        })
+        if (!w || cancelled) return
+        const ok = await w.connect()
+        if (!ok || cancelled) return
+        const accounts = await w.accounts()
+        if (!accounts?.length || cancelled) return
+        const addr = (stored.address || '').toLowerCase()
+        const acc = accounts.find((a) => (a?.address ?? '').toLowerCase() === addr) ?? accounts[0]
+        if (!cancelled) {
+          setWallet(w)
+          setAddress(acc?.address ?? stored.address)
+          setAccount(acc)
+          setConnected(true)
+        }
+      } catch (_) {
+        if (!cancelled) clearStoredWallet()
+      }
+    }
+    restore()
+    return () => { cancelled = true }
+  }, [])
 
   const openWalletPicker = useCallback(async () => {
     setError(null)
@@ -87,6 +152,8 @@ export function WalletProvider({ children }) {
     const addr = acc?.address ?? null
     if (!addr) return
     if (pendingWallet) {
+      const walletName = (typeof pendingWallet?.name === 'function' ? pendingWallet.name() : '') ?? ''
+      setStoredWallet(walletName, addr)
       setAddress(addr)
       setAccount(acc)
       setWallet(pendingWallet)
@@ -98,6 +165,8 @@ export function WalletProvider({ children }) {
       setAvailableWallets([])
       setConnecting(false)
     } else if (wallet) {
+      const walletName = (typeof wallet?.name === 'function' ? wallet.name() : '') ?? ''
+      setStoredWallet(walletName, addr)
       setAddress(addr)
       setAccount(acc)
       setAccountPickerOpen(false)
@@ -123,9 +192,12 @@ export function WalletProvider({ children }) {
         return
       }
       if (accounts.length === 1) {
+        const acc = accounts[0]
+        const walletName = (typeof w?.name === 'function' ? w.name() : '') ?? ''
+        setStoredWallet(walletName, acc?.address ?? '')
         setWallet(w)
-        setAddress(accounts[0].address)
-        setAccount(accounts[0])
+        setAddress(acc.address)
+        setAccount(acc)
         setConnected(true)
         setWalletPickerOpen(false)
         setAvailableWallets([])
@@ -145,6 +217,7 @@ export function WalletProvider({ children }) {
 
   const disconnect = useCallback(async () => {
     setError(null)
+    clearStoredWallet()
     try {
       if (wallet?.disconnect) await wallet.disconnect()
     } catch (_) {}
