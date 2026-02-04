@@ -1,39 +1,47 @@
-# Déploie le front (front/dist) sur DeWeb buildnet à chaque push sur main.
-# Inspiré de https://github.com/massalabs/massa.net-v2
-# Prérequis : créer le secret MASSA_DEWEB_SECRET_KEY dans GitHub (Settings > Secrets and variables > Actions)
-# avec la clé secrète du wallet qui déploie (buildnet).
-name: Deploy to DeWeb (buildnet)
+# Comme https://github.com/massalabs/massa.net-v2/blob/main/.github/workflows/deweb.yml
+# Déploie le front sur DeWeb à chaque push sur main.
+# Prérequis : secret PRIVATE_KEY (buildnet) dans GitHub Actions.
+name: CD - Deploy Main to DeWeb
 
 on:
   push:
     branches: [main]
 
 jobs:
-  deploy:
+  deploy-main:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        network: [buildnet]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: front/package-lock.json
 
-      - name: Install dependencies
+      - name: Install
         run: npm ci
         working-directory: front
+
+      - name: Get commit hash
+        id: vars
+        run: echo "commit_hash=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build
         run: npm run build
         working-directory: front
-        env:
-          # Variables d'environnement optionnelles pour le build (ex. contrat buildnet)
-          VITE_STORAGE_REGISTRY_ADDRESS: ${{ vars.VITE_STORAGE_REGISTRY_ADDRESS || '' }}
 
-      - name: Deploy to DeWeb (buildnet)
-        run: npx @massalabs/deweb-cli upload --config deweb_cli_config.buildnet.json front/dist
+      - name: Deploy Main → ${{ matrix.network }}
+        id: deploy
+        uses: massalabs/deweb-gh-action@v0.1.0
+        with:
+          config_file: ./deweb_cli_config.${{ matrix.network }}.json
+          source_folder: ./front/dist
         env:
-          SECRET_KEY: ${{ secrets.MASSA_DEWEB_SECRET_KEY }}
+          MASSA_DEWEB_SECRET_KEY: ${{ secrets.PRIVATE_KEY }}
+
+      - name: URL
+        run: echo "Main deployed → ${{ steps.deploy.outputs.deployed-website }}"
