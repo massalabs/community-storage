@@ -351,6 +351,8 @@ export function constructor(binaryArgs: StaticArray<u8>): void {
  * Register as a storage provider (no staking required).
  * @param binaryArgs - Serialized Args containing:
  *   - allocatedGb: u64 (storage allocation in GB)
+ *   - endpoint: string (optional HTTP base URL, e.g. "https://storage1.massa.net" or empty)
+ *   - p2pAddrs: Array<string> (optional libp2p multiaddrs; may be empty)
  */
 export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   assertNotPaused();
@@ -359,6 +361,10 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   const allocatedGb = args
     .nextU64()
     .expect('allocatedGb argument is missing or invalid');
+  
+  // Metadata: endpoint and P2P addresses (required but can be empty strings/arrays)
+  const endpoint = args.nextString().expect('endpoint argument is missing or invalid');
+  const p2pAddrs = args.nextStringArray().expect('p2pAddrs argument is missing or invalid');
 
   const caller = Context.caller().toString();
   const config = getConfig();
@@ -401,9 +407,19 @@ export function registerStorageNode(binaryArgs: StaticArray<u8>): void {
   stats.activeNodes += 1;
   setPeriodStats(stats);
 
-  generateEvent(
-    'STORAGE_NODE_REGISTERED:' + caller + ',' + allocatedGb.toString(),
-  );
+  // Store provider metadata if provided
+  if (endpoint.length > 0 || p2pAddrs.length > 0) {
+    const stored = new Args().add(endpoint).add<Array<string>>(p2pAddrs);
+    Storage.set(stringToBytes(providerMetadataKey(caller)), stored.serialize());
+    
+    generateEvent(
+      'STORAGE_NODE_REGISTERED:' + caller + ',' + allocatedGb.toString() + ',METADATA:' + endpoint,
+    );
+  } else {
+    generateEvent(
+      'STORAGE_NODE_REGISTERED:' + caller + ',' + allocatedGb.toString(),
+    );
+  }
 }
 
 /**
