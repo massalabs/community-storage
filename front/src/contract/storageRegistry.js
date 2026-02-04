@@ -9,22 +9,22 @@ import {
   PublicAPI,
   PublicApiUrl,
   SmartContract,
-} from '@massalabs/massa-web3'
+} from "@massalabs/massa-web3";
 
 const CONTRACT_ADDRESS =
   import.meta.env.VITE_STORAGE_REGISTRY_ADDRESS ||
-  'AS1GCtj7QMCdcX6iCfKid41X8bDwprFenqSWEpPcxK4UiXdfcGHd'
+  "AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn";
 
-let provider = null
-let contract = null
-let publicApi = null
+let provider = null;
+let contract = null;
+let publicApi = null;
 
 function getContract() {
   if (!contract) {
-    provider = JsonRpcPublicProvider.buildnet()
-    contract = new SmartContract(provider, CONTRACT_ADDRESS)
+    provider = JsonRpcPublicProvider.buildnet();
+    contract = new SmartContract(provider, CONTRACT_ADDRESS);
   }
-  return contract
+  return contract;
 }
 
 /**
@@ -32,8 +32,8 @@ function getContract() {
  * @returns {Promise<number>}
  */
 export async function getCurrentPeriod() {
-  if (!publicApi) publicApi = new PublicAPI(PublicApiUrl.Buildnet)
-  return publicApi.fetchPeriod()
+  if (!publicApi) publicApi = new PublicAPI(PublicApiUrl.Buildnet);
+  return publicApi.fetchPeriod();
 }
 
 /**
@@ -42,17 +42,17 @@ export async function getCurrentPeriod() {
  * @returns {Promise<{ rewardPerGbPerPeriod, minAllocatedGb, maxAllocatedGb, challengeResponseTimeout, rewardDistributionPeriod }>}
  */
 export async function getConfig() {
-  const sc = getContract()
-  const res = await sc.read('getConfigView', new Args())
-  if (res.info?.error) throw new Error(res.info.error)
-  const args = new Args(res.value)
+  const sc = getContract();
+  const res = await sc.read("getConfigView", new Args());
+  if (res.info?.error) throw new Error(res.info.error);
+  const args = new Args(res.value);
   return {
     rewardPerGbPerPeriod: args.nextU64(),
     minAllocatedGb: args.nextU64(),
     maxAllocatedGb: args.nextU64(),
     challengeResponseTimeout: args.nextU64(),
     rewardDistributionPeriod: args.nextU64(),
-  }
+  };
 }
 
 /**
@@ -60,11 +60,11 @@ export async function getConfig() {
  * @returns {Promise<bigint>}
  */
 export async function getTotalNodes() {
-  const sc = getContract()
-  const res = await sc.read('getTotalNodesCount', new Args())
-  if (res.info?.error) throw new Error(res.info.error)
-  const args = new Args(res.value)
-  return args.nextU64()
+  const sc = getContract();
+  const res = await sc.read("getTotalNodesCount", new Args());
+  if (res.info?.error) throw new Error(res.info.error);
+  const args = new Args(res.value);
+  return args.nextU64();
 }
 
 /**
@@ -73,11 +73,11 @@ export async function getTotalNodes() {
  * @returns {Promise<{ period, totalGbStored, totalRewardsDistributed, activeNodes, challengesIssued, challengesPassed, rewardsDistributed }>}
  */
 export async function getPeriodStats(period) {
-  const sc = getContract()
-  const args = new Args().addU64(BigInt(period))
-  const res = await sc.read('getPeriodStatsView', args)
-  if (res.info?.error) throw new Error(res.info.error)
-  const out = new Args(res.value)
+  const sc = getContract();
+  const args = new Args().addU64(BigInt(period));
+  const res = await sc.read("getPeriodStatsView", args);
+  if (res.info?.error) throw new Error(res.info.error);
+  const out = new Args(res.value);
   return {
     period: out.nextU64(),
     totalGbStored: out.nextU64(),
@@ -86,7 +86,7 @@ export async function getPeriodStats(period) {
     challengesIssued: out.nextU64(),
     challengesPassed: out.nextU64(),
     rewardsDistributed: out.nextBool(),
-  }
+  };
 }
 
 /**
@@ -95,11 +95,11 @@ export async function getPeriodStats(period) {
  * @returns {Promise<{ address, allocatedGb, registeredPeriod, totalChallenges, passedChallenges, pendingRewards, lastChallengedPeriod, stakedAmount, active } | null>} null si non enregistré
  */
 export async function getNodeInfo(address) {
-  const sc = getContract()
-  const args = new Args().addString(address)
-  const res = await sc.read('getNodeInfo', args)
-  if (res.info?.error) return null
-  const out = new Args(res.value)
+  const sc = getContract();
+  const args = new Args().addString(address);
+  const res = await sc.read("getNodeInfo", args);
+  if (res.info?.error) return null;
+  const out = new Args(res.value);
   return {
     address: out.nextString(),
     allocatedGb: out.nextU64(),
@@ -110,7 +110,7 @@ export async function getNodeInfo(address) {
     lastChallengedPeriod: out.nextU64(),
     stakedAmount: out.nextU64(),
     active: out.nextBool(),
-  }
+  };
 }
 
 /**
@@ -119,12 +119,12 @@ export async function getNodeInfo(address) {
  * @returns {Promise<bigint>}
  */
 export async function calculatePendingRewards(address) {
-  const sc = getContract()
-  const args = new Args().addString(address)
-  const res = await sc.read('calculatePendingRewards', args)
-  if (res.info?.error) throw new Error(res.info.error)
-  const out = new Args(res.value)
-  return out.nextU64()
+  const sc = getContract();
+  const args = new Args().addString(address);
+  const res = await sc.read("calculatePendingRewards", args);
+  if (res.info?.error) throw new Error(res.info.error);
+  const out = new Args(res.value);
+  return out.nextU64();
 }
 
 /**
@@ -133,8 +133,8 @@ export async function calculatePendingRewards(address) {
  * @returns {Promise<bigint>}
  */
 export async function getContractBalance(final = true) {
-  const sc = getContract()
-  return sc.balance(final)
+  const sc = getContract();
+  return sc.balance(final);
 }
 
 /**
@@ -143,12 +143,12 @@ export async function getContractBalance(final = true) {
  * @returns {Promise<string>} Adresse ou '' si hors limites
  */
 export async function getNodeAddressAt(index) {
-  const sc = getContract()
-  const args = new Args().addU64(BigInt(index))
-  const res = await sc.read('getNodeAddressAt', args)
-  if (res.info?.error) return ''
-  const out = new Args(res.value)
-  return out.nextString() || ''
+  const sc = getContract();
+  const args = new Args().addU64(BigInt(index));
+  const res = await sc.read("getNodeAddressAt", args);
+  if (res.info?.error) return "";
+  const out = new Args(res.value);
+  return out.nextString() || "";
 }
 
 /**
@@ -157,14 +157,14 @@ export async function getNodeAddressAt(index) {
  */
 export async function getRegisteredAddresses() {
   try {
-    const sc = getContract()
-    const res = await sc.read('getRegisteredAddressesView', new Args())
-    if (res.info?.error || !res.value || res.value.length === 0) return []
-    const args = new Args(res.value)
-    const arr = args.nextArray(ArrayTypes.STRING)
-    return Array.isArray(arr) ? arr : []
+    const sc = getContract();
+    const res = await sc.read("getRegisteredAddressesView", new Args());
+    if (res.info?.error || !res.value || res.value.length === 0) return [];
+    const args = new Args(res.value);
+    const arr = args.nextArray(ArrayTypes.STRING);
+    return Array.isArray(arr) ? arr : [];
   } catch (_) {
-    return []
+    return [];
   }
 }
 
@@ -229,18 +229,18 @@ export async function getUploaderPricePerGb() {
  */
 export async function getProviderMetadata(address) {
   try {
-    const sc = getContract()
-    const args = new Args().addString(address)
-    const res = await sc.read('getProviderMetadataView', args)
+    const sc = getContract();
+    const args = new Args().addString(address);
+    const res = await sc.read("getProviderMetadataView", args);
     if (res.info?.error || !res.value || res.value.length === 0) {
-      return { endpoint: '', p2pAddrs: [] }
+      return { endpoint: "", p2pAddrs: [] };
     }
-    const out = new Args(res.value)
-    const endpoint = out.nextString() || ''
-    const p2pAddrs = out.nextArray(ArrayTypes.STRING) || []
-    return { endpoint, p2pAddrs: Array.isArray(p2pAddrs) ? p2pAddrs : [] }
+    const out = new Args(res.value);
+    const endpoint = out.nextString() || "";
+    const p2pAddrs = out.nextArray(ArrayTypes.STRING) || [];
+    return { endpoint, p2pAddrs: Array.isArray(p2pAddrs) ? p2pAddrs : [] };
   } catch (_) {
-    return { endpoint: '', p2pAddrs: [] }
+    return { endpoint: "", p2pAddrs: [] };
   }
 }
 
@@ -251,23 +251,23 @@ export async function getProviderMetadata(address) {
  * @returns {Promise<Array<{ address, allocatedGb, usedGb?, availableGb, endpoint?, p2pAddrs? }>>}
  */
 export async function getStorageProviders() {
-  let addresses = await getRegisteredAddresses()
+  let addresses = await getRegisteredAddresses();
   if (addresses.length === 0) {
-    const total = await getTotalNodes()
-    const n = Number(total)
+    const total = await getTotalNodes();
+    const n = Number(total);
     for (let i = 0; i < n; i++) {
-      const addr = await getNodeAddressAt(i)
-      if (addr) addresses.push(addr)
+      const addr = await getNodeAddressAt(i);
+      if (addr) addresses.push(addr);
     }
   }
-  const list = []
+  const list = [];
   for (const address of addresses) {
-    const info = await getNodeInfo(address)
-    if (!info || !info.active) continue
-    const allocatedGb = info.allocatedGb
-    const usedGb = info.usedGb != null ? info.usedGb : 0n
-    const availableGb = allocatedGb - usedGb
-    const metadata = await getProviderMetadata(address)
+    const info = await getNodeInfo(address);
+    if (!info || !info.active) continue;
+    const allocatedGb = info.allocatedGb;
+    const usedGb = info.usedGb != null ? info.usedGb : 0n;
+    const availableGb = allocatedGb - usedGb;
+    const metadata = await getProviderMetadata(address);
     list.push({
       address,
       allocatedGb,
@@ -275,9 +275,9 @@ export async function getStorageProviders() {
       availableGb: availableGb > 0n ? availableGb : allocatedGb,
       endpoint: metadata.endpoint || undefined,
       p2pAddrs: metadata.p2pAddrs?.length ? metadata.p2pAddrs : undefined,
-    })
+    });
   }
-  return list
+  return list;
 }
 
-export { CONTRACT_ADDRESS }
+export { CONTRACT_ADDRESS };

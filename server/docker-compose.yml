@@ -1,0 +1,28 @@
+services:
+  storage-1:
+    build: .
+    container_name: storage-1
+    ports: ["4343:4343", "4001:4001"]
+    environment: [MASSA_ADDRESS=AU1sSNodD1WDJEm7pyBmqRSYQq6vALL1U8vkkMjYw2hsZunRXKVF, STORAGE_LIMIT_GB=1, RUST_LOG=info, P2P_LISTEN_ADDR=/ip4/0.0.0.0/tcp/4001]
+    volumes: [storage-1-data:/app/data]
+    healthcheck: {test: ["CMD", "curl", "-f", "http://localhost:4343/health"], interval: 10s, timeout: 3s, retries: 3}
+  storage-2:
+    build: .
+    container_name: storage-2
+    ports: ["4344:4343", "4002:4001"]
+    environment: [MASSA_ADDRESS=AU12PRWxYvqQkYhGmSaCZH5sva59pbA4J8XPFimwf7GoXbV7P2taW, STORAGE_LIMIT_GB=1, RUST_LOG=info, P2P_LISTEN_ADDR=/ip4/0.0.0.0/tcp/4001, "BOOTSTRAP_PEERS=/dns4/storage-1/tcp/4001"]
+    volumes: [storage-2-data:/app/data]
+    healthcheck: {test: ["CMD", "curl", "-f", "http://localhost:4343/health"], interval: 10s, timeout: 3s, retries: 3}
+    depends_on: [storage-1]
+  storage-3:
+    build: .
+    container_name: storage-3
+    ports: ["4345:4343", "4003:4001"]
+    environment: [MASSA_ADDRESS=AU12AS8ffrmNB9ReHXTGUrCVmKQ6GJehzqArzwvNfGT6XW2fUFxEH, STORAGE_LIMIT_GB=1, RUST_LOG=info, P2P_LISTEN_ADDR=/ip4/0.0.0.0/tcp/4001, "BOOTSTRAP_PEERS=/dns4/storage-1/tcp/4001"]
+    volumes: [storage-3-data:/app/data]
+    healthcheck: {test: ["CMD", "curl", "-f", "http://localhost:4343/health"], interval: 10s, timeout: 3s, retries: 3}
+    depends_on: [storage-1]
+volumes:
+  storage-1-data:
+  storage-2-data:
+  storage-3-data:

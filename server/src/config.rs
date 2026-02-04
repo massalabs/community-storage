@@ -14,12 +14,15 @@ pub struct Config {
     /// libp2p listen address (multiaddr), e.g. `/ip4/0.0.0.0/tcp/0`.
     pub p2p_listen_addr: String,
     /// Optional Massa address identifying this storage provider.
-    /// Example: `AU1...` (bech32) or any canonical form you use in Massa.
     pub massa_address: Option<String>,
     /// Storage registry smart contract address (for upload auth: getIsAllowedUploader).
     pub storage_registry_address: String,
     /// Massa JSON-RPC URL (e.g. https://buildnet.massa.net/api/v2). Required for upload auth.
     pub massa_json_rpc: String,
+    /// Bootstrap peers to connect to on startup (comma-separated multiaddrs).
+    pub bootstrap_peers: Vec<String>,
+    /// Storage registry contract address.
+    pub contract_address: String,
 }
 
 impl Config {
@@ -34,7 +37,8 @@ impl Config {
         let storage_path = std::env::var("STORAGE_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("./data"));
-        let bind_address = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1:4343".to_string());
+        let bind_address = std::env::var("BIND_ADDRESS")
+            .unwrap_or_else(|_| "127.0.0.1:4343".to_string());
         let storage_limit_gb = std::env::var("STORAGE_LIMIT_GB")
             .expect("STORAGE_LIMIT_GB is required")
             .parse::<u64>()
@@ -46,6 +50,12 @@ impl Config {
             .expect("STORAGE_REGISTRY_ADDRESS is required for upload authentication");
         let massa_json_rpc = std::env::var("MASSA_JSON_RPC")
             .expect("MASSA_JSON_RPC is required for upload authentication");
+        let bootstrap_peers = std::env::var("BOOTSTRAP_PEERS")
+            .map(|s| s.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
+            .unwrap_or_default();
+        let contract_address = std::env::var("CONTRACT_ADDRESS")
+            .unwrap_or_else(|_| "AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn".to_string());
+
         Self {
             storage_path,
             bind_address,
@@ -54,6 +64,8 @@ impl Config {
             massa_address,
             storage_registry_address,
             massa_json_rpc,
+            bootstrap_peers,
+            contract_address,
         }
     }
 }
