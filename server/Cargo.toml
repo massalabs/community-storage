@@ -18,10 +18,18 @@ openssl = { version = "0.10", features = ["vendored"] }
 blake3 = "1.5"
 ed25519-dalek = "2.1"
 bs58 = "0.5"
-libp2p = { version = "0.56.0", features = ["tcp", "quic", "noise", "ping", "tokio", "yamux", "identify", "macros"] }
+libp2p = { version = "0.56.0", features = ["tcp", "quic", "dns", "noise", "ping", "tokio", "yamux", "identify", "macros"] }
 futures = "0.3"
 dotenvy = "0.15"
 anyhow = "1.0"
 
-# HTTP client for Massa JSON-RPC
+# HTTP client for Massa JSON-RPC (read-only queries)
 reqwest = { version = "0.12", features = ["json"] }
+
+# Massa dependencies for gRPC smart contract calls
+tonic = "0.12"
+tokio-stream = "0.1"
+massa-proto-rs = { git = "https://github.com/massalabs/massa-proto-rs", branch = "main", features = ["tonic"] }
+massa_signature = { git = "https://github.com/massalabs/massa.git", branch = "main", package = "massa_signature" }
+massa_models = { git = "https://github.com/massalabs/massa.git", branch = "main", package = "massa_models" }
+massa_serialization = { git = "https://github.com/massalabs/massa.git", branch = "main", package = "massa_serialization" }

@@ -21,8 +21,14 @@ pub struct Config {
     pub massa_json_rpc: String,
     /// Bootstrap peers to connect to on startup (comma-separated multiaddrs).
     pub bootstrap_peers: Vec<String>,
+    /// Massa gRPC URL for write operations (e.g. `grpc://buildnet.massa.net:33037`).
+    pub massa_grpc_url: Option<String>,
     /// Storage registry contract address.
     pub contract_address: String,
+    /// Private key for signing transactions (optional, needed for P2P address registration).
+    pub private_key: Option<String>,
+    /// Public HTTP endpoint for this provider (registered in contract for other peers).
+    pub public_endpoint: Option<String>,
 }
 
 impl Config {
@@ -53,8 +59,11 @@ impl Config {
         let bootstrap_peers = std::env::var("BOOTSTRAP_PEERS")
             .map(|s| s.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect())
             .unwrap_or_default();
+        let massa_grpc_url = std::env::var("MASSA_GRPC_URL").ok();
         let contract_address = std::env::var("CONTRACT_ADDRESS")
             .unwrap_or_else(|_| "AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn".to_string());
+        let private_key = std::env::var("PRIVATE_KEY").ok();
+        let public_endpoint = std::env::var("PUBLIC_ENDPOINT").ok();
 
         Self {
             storage_path,
@@ -65,7 +74,10 @@ impl Config {
             storage_registry_address,
             massa_json_rpc,
             bootstrap_peers,
+            massa_grpc_url,
             contract_address,
+            private_key,
+            public_endpoint,
         }
     }
 }

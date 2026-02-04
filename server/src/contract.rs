@@ -1,11 +1,16 @@
-//! Massa smart contract interaction via JSON-RPC.
+//! Massa smart contract interaction.
 //!
-//! Queries the storage registry contract to discover other providers' P2P addresses.
+//! - Read-only queries via JSON-RPC
+//! - Write operations (updateProviderMetadata) via gRPC
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::args::Args;
+use crate::massa_grpc::{ChainId, GrpcClient};
+use massa_models::amount::Amount;
 
 /// Provider info from the contract
 #[derive(Debug, Clone)]
@@ -15,11 +20,15 @@ pub struct ProviderInfo {
     pub p2p_addrs: Vec<String>,
 }
 
-/// Massa JSON-RPC client
+/// Massa client for contract interactions
+/// - JSON-RPC for read-only queries
+/// - gRPC for write operations (requires private key)
 pub struct MassaClient {
     http: reqwest::Client,
     rpc_url: String,
     contract_address: String,
+    /// gRPC client for write operations (optional, requires private key)
+    grpc_client: Option<Arc<Mutex<GrpcClient>>>,
 }
 
 #[derive(Serialize)]
@@ -53,7 +62,25 @@ impl MassaClient {
             http: reqwest::Client::new(),
             rpc_url,
             contract_address,
+            grpc_client: None,
         }
+    }
+
+    /// Create a client with gRPC support for write operations
+    pub async fn with_grpc(
+        rpc_url: String,
+        grpc_url: String,
+        contract_address: String,
+        private_key: &str,
+    ) -> Result<Self> {
+        let grpc_client = GrpcClient::new(&grpc_url, private_key, ChainId::Buildnet).await?;
+
+        Ok(Self {
+            http: reqwest::Client::new(),
+            rpc_url,
+            contract_address,
+            grpc_client: Some(Arc::new(Mutex::new(grpc_client))),
+        })
     }
 
     /// Call a read-only function on the contract
@@ -147,5 +174,45 @@ impl MassaClient {
         }
 
         Ok(providers)
+    }
+
+    /// Update provider metadata (endpoint + P2P addresses) in the smart contract.
+    /// Requires gRPC client with private key (use `with_grpc` constructor).
+    pub async fn update_provider_metadata(
+        &self,
+        endpoint: &str,
+        p2p_addrs: &[String],
+    ) -> Result<String> {
+        let grpc = self
+            .grpc_client
+            .as_ref()
+            .ok_or_else(|| anyhow!("gRPC client not configured (missing private key)"))?;
+
+        // Build args: endpoint (string) + p2p_addrs (string array)
+        let mut args = Args::new();
+        args.add_string(endpoint);
+        args.add_string_array(p2p_addrs);
+
+        let mut client = grpc.lock().await;
+        let op_id = client
+            .call_sc(
+                &self.contract_address,
+                "updateProviderMetadata",
+                args.into_bytes(),
+                "0.01",      // fee
+                10_000_000,  // max_gas
+                Amount::from_raw(0), // coins
+            )
+            .await
+            .map_err(|e| anyhow!("Failed to call updateProviderMetadata: {}", e))?;
+
+        tracing::info!(
+            operation_id = %op_id,
+            endpoint = %endpoint,
+            p2p_addrs_count = p2p_addrs.len(),
+            "provider metadata update sent"
+        );
+
+        Ok(op_id)
     }
 }

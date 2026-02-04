@@ -13,6 +13,7 @@ import {
   JsonRpcProvider,
   SmartContract,
   Mas,
+  ArrayTypes,
 } from '@massalabs/massa-web3';
 
 // -----------------------------------------------------------------------------
@@ -169,7 +170,7 @@ async function runSetup(): Promise<void> {
 
       const metaOp = await contract.call(
         'updateProviderMetadata',
-        new Args().addString(endpoint).addArray([], 0),
+        new Args().addString(endpoint).addArray([], ArrayTypes.STRING),
       );
       await metaOp.waitSpeculativeExecution();
       console.log(`Provider ${p.index}: OK -> ${endpoint}`);

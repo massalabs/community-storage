@@ -3,12 +3,12 @@ FROM rust:latest AS builder
 
 WORKDIR /app
 
-# Copy manifests first for better layer caching
+# Copy manifests first for dependency caching
 COPY Cargo.toml Cargo.lock ./
 
 # Create dummy src to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
+RUN cargo build --release || true
 RUN rm -rf src
 
 # Copy actual source and rebuild

@@ -262,6 +262,8 @@ pub async fn health() -> &'static str {
 pub struct PeersResponse {
     pub local_peer_id: String,
     pub listen_addrs: Vec<String>,
+    /// Full multiaddrs with peer ID (for contract registration)
+    pub multiaddrs: Vec<String>,
     pub connected_peers: Vec<crate::p2p::PeerInfo>,
 }
 
@@ -270,9 +272,15 @@ pub async fn peers(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match &state.p2p_state {
         Some(p2p) => {
             let s = p2p.read().await;
+            let peer_id = s.local_peer_id.to_string();
             let response = PeersResponse {
-                local_peer_id: s.local_peer_id.to_string(),
+                local_peer_id: peer_id.clone(),
                 listen_addrs: s.listen_addrs.iter().map(|a| a.to_string()).collect(),
+                multiaddrs: s
+                    .listen_addrs
+                    .iter()
+                    .map(|a| format!("{}/p2p/{}", a, peer_id))
+                    .collect(),
                 connected_peers: s.connected_peers.values().cloned().collect(),
             };
             (StatusCode::OK, Json(response)).into_response()
