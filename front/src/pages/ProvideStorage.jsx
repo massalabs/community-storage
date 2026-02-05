@@ -235,7 +235,7 @@ export function ProvideStorage() {
     )
   }
 
-  const DOWNLOAD_SERVER_URL = 'https://github.com/massalabs/community-storage/actions/workflows/ci-server.yml'
+  const DOWNLOAD_SERVER_URL = 'https://github.com/massalabs/community-storage/actions/runs/21681794007'
   const envExampleSnippet = `# Obligatoire
 STORAGE_LIMIT_GB=100
 STORAGE_REGISTRY_ADDRESS=AS14XRdSCc87DZbMx2Zwa1BWK2R8WmwShFGnTtVa2RLDYyx2vwyn
